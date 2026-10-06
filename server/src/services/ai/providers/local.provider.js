@@ -11,24 +11,32 @@
  * instead of being masked by a fake successful reply.
  */
 export function createLocalProvider() {
+  async function generateResponse(messages) {
+    const lastUserMessage = [...messages]
+      .reverse()
+      .find((message) => message.role === 'user');
+
+    const content =
+      'Offline provider active: no AI model is configured, so this reply was ' +
+      'generated locally without calling a model. Set AI_PROVIDER=openai and ' +
+      'OPENAI_API_KEY on the server to enable real replies.' +
+      (lastUserMessage
+        ? ` (Received ${messages.length} message(s); last one had ${lastUserMessage.content.length} characters.)`
+        : '');
+
+    return { role: 'assistant', content };
+  }
+
+  async function* streamResponse(messages) {
+    const response = await generateResponse(messages);
+    yield response.content;
+  }
+
   return {
     name: 'local',
-
-    async generateReply(messages) {
-      const lastUserMessage = [...messages]
-        .reverse()
-        .find((message) => message.role === 'user');
-
-      const content =
-        'Offline provider active: no AI model is configured, so this reply was ' +
-        'generated locally without calling a model. Set AI_PROVIDER=openai and ' +
-        'AI_PROVIDER_API_KEY on the server to enable real replies.' +
-        (lastUserMessage
-          ? ` (Received ${messages.length} message(s); last one had ${lastUserMessage.content.length} characters.)`
-          : '');
-
-      return { role: 'assistant', content };
-    },
+    generateResponse,
+    streamResponse,
+    generateReply: generateResponse,
   };
 }
 
