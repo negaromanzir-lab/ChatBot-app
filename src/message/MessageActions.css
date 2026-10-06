@@ -1,0 +1,29 @@
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+/*
+ * Reveal on hover for pointer users, but keep it always visible once anything
+ * inside has keyboard focus — otherwise the controls are unreachable by tab.
+ */
+.message-bubble:hover .message-actions,
+.message-actions:focus-within {
+  opacity: 1;
+}
+
+/* No hover on touch, so they would simply never appear. */
+@media (hover: none) {
+  .message-actions {
+    opacity: 1;
+  }
+}
+
+.message-actions__hint {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}

@@ -1,0 +1,135 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.button--primary {
+  background-color: var(--color-accent);
+  color: var(--color-text-inverted);
+}
+
+.button--primary:not(:disabled):hover {
+  background-color: var(--color-accent-hover);
+}
+
+.button--secondary {
+  background-color: var(--color-elevated);
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.button--secondary:not(:disabled):hover {
+  background-color: var(--color-surface-hover);
+}
+
+.button--ghost {
+  background-color: transparent;
+  color: var(--color-text-secondary);
+}
+
+.button--ghost:not(:disabled):hover {
+  background-color: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.button--danger {
+  background-color: transparent;
+  border-color: var(--color-border-strong);
+  color: var(--color-danger);
+}
+
+.button--danger:not(:disabled):hover {
+  background-color: var(--color-danger-soft);
+  border-color: var(--color-danger);
+}
+
+.button--block {
+  width: 100%;
+}
+
+/**
+ * Round icon-only control. The label is still required — it becomes the
+ * accessible name — but is visually hidden unless `showLabel` is set.
+ */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background-color: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.icon-button:not(:disabled):hover {
+  background-color: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.icon-button--sm {
+  padding: 5px;
+}
+
+.icon-button--md {
+  padding: 8px;
+}
+
+.icon-button--lg {
+  padding: 10px;
+}
+
+.icon-button--bordered {
+  border: 1px solid var(--color-border-strong);
+  background-color: var(--color-elevated);
+}
+
+.icon-button--bordered:not(:disabled):hover {
+  background-color: var(--color-surface-hover);
+}
+
+.icon-button__label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Square send/stop control in the composer. */
+.icon-button--solid {
+  background-color: var(--color-accent);
+  color: var(--color-text-inverted);
+}
+
+.icon-button--solid:not(:disabled):hover {
+  background-color: var(--color-accent-hover);
+  color: var(--color-text-inverted);
+}
+
+.icon-button--solid:disabled {
+  background-color: var(--color-surface-active);
+  color: var(--color-text-muted);
+  opacity: 1;
+}
