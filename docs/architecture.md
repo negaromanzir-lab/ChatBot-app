@@ -273,28 +273,34 @@ contract (`role: 'assistant'`) inside `chatService.js` only.
 `services/ai/providers/index.js` resolves one adapter from `AI_PROVIDER`. The
 controller never imports a provider module.
 
-- `openaiCompatible.provider.js` targets any OpenAI-compatible
-  `/chat/completions` endpoint, so changing vendors is a config change. It bounds
-  the call with `AbortSignal.timeout` and maps upstream failures to distinct
-  codes: `AI_PROVIDER_TIMEOUT` (504), `AI_PROVIDER_UNAVAILABLE` (503),
-  `AI_PROVIDER_RATE_LIMITED` (503), `AI_PROVIDER_UNAUTHORIZED` (502), and
-  `AI_PROVIDER_EMPTY_RESPONSE` (502).
-- `local.provider.js` is an offline deterministic stand-in. It is selected
-  explicitly, never as a silent fallback, and it states plainly that no model is
-  configured. This is what keeps decision 8 intact: a misconfigured real provider
-  surfaces as an error instead of being masked by a fabricated success.
+- `AIProvider.js` documents the shared `generateResponse()` and
+  `streamResponse()` contract. `chat.service.js` owns orchestration and calls
+  the provider; HTTP controllers do not import provider modules.
+- `openai.provider.js` is the direct OpenAI adapter. It reads `OPENAI_API_KEY`
+  and `OPENAI_MODEL` from server configuration, applies a server-owned system
+  instruction, supports one-shot and SSE-streamed provider responses, and maps
+  upstream failures to stable API errors.
+- `openaiCompatible.provider.js` reuses the OpenAI wire protocol for compatible
+  endpoints, configured separately with `AI_PROVIDER_API_KEY`,
+  `AI_PROVIDER_BASE_URL`, and `AI_PROVIDER_MODEL`.
+- `local.provider.js` implements the same provider methods as an offline,
+  deterministic stand-in. It is selected explicitly, never as a silent
+  fallback, and states plainly that no model is configured.
+- A misconfigured real provider surfaces as an error instead of being masked by
+  a fabricated success.
 
-The API key is read only in the provider module, attached as an `Authorization`
-header, redacted from logs, and never included in any response. This was
-verified against a mock OpenAI-compatible endpoint: the upstream received
-`Authorization: Bearer <key>` while the browser bundle contained no key material.
+The key is resolved in server configuration and is used only in the provider's
+`Authorization` header. It is not included in API responses or error logs.
+`OPENAI_API_KEY` must not use the `VITE_` prefix. `POST /api/chat` remains a
+non-streaming HTTP response for now; exposing provider streaming to the browser
+requires a later API/client transport change.
 
 ### Verification performed
 
-- `npm test` — 52 tests across 4 files: frontend App behaviour, the
-  UI↔API mapping, route-level behaviour through real `fetch` against an
-  ephemeral port, and provider adapter error mapping.
-- `npm run lint`, `npm run build` — clean.
+- `npm test` — frontend behavior and mapping, real HTTP route tests, and
+  provider request/response, streaming, and error tests.
+- `npm run lint` — clean.
+- `npm run build` — succeeds; Vite reports the existing large-chunk advisory.
 - Browser round trip through the Vite proxy with both processes running: real
   `POST /api/chat` requests, correct rendering, cleared composer, Enter-to-send,
   0 console errors.
@@ -303,10 +309,11 @@ verified against a mock OpenAI-compatible endpoint: the upstream received
 
 ### Known limitations
 
-- Responses are not streamed; the client waits for the complete reply.
+- The OpenAI provider supports streaming, but `POST /api/chat` and the client
+  currently use a complete-response request/response.
 - No authentication, so rate limiting is per IP and conversations are lost on
   reload.
-- The default provider is offline and says so. Real replies require
-  `AI_PROVIDER_API_KEY` on the server.
+- The default provider is offline and says so. Direct OpenAI replies require
+  `AI_PROVIDER=openai` and `OPENAI_API_KEY` on the server.
 - CORS is an origin allowlist, but there is no authentication layer, so it is
   not an authorization control.

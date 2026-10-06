@@ -39,7 +39,17 @@ export function createChatService({ provider } = {}) {
       'Generating assistant reply',
     );
 
-    const reply = await activeProvider.generateReply(messages);
+    const generateResponse =
+      activeProvider.generateResponse ?? activeProvider.generateReply;
+    if (typeof generateResponse !== 'function') {
+      logger.error({ provider: activeProvider.name }, 'AI provider does not implement generateResponse');
+      throw ApiError.internal(
+        'AI_PROVIDER_INVALID_IMPLEMENTATION',
+        'The configured AI provider is not available.',
+      );
+    }
+
+    const reply = await generateResponse.call(activeProvider, messages);
 
     if (!reply || typeof reply.content !== 'string' || reply.content.length === 0) {
       logger.error({ provider: activeProvider.name }, 'Provider returned an unusable reply');

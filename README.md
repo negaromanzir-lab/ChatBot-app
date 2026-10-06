@@ -33,14 +33,15 @@ calls and is explicit that it is not a language model. To use a real model, set 
 
 ```bash
 AI_PROVIDER=openai
-AI_PROVIDER_API_KEY=your-key-here
-AI_PROVIDER_BASE_URL=https://api.openai.com/v1
-AI_PROVIDER_MODEL=gpt-4o-mini
+OPENAI_API_KEY=your-key-here
+OPENAI_MODEL=gpt-4o-mini
 ```
 
-`AI_PROVIDER_BASE_URL` works with any OpenAI-compatible endpoint (OpenAI, Groq, OpenRouter,
-a local Ollama/LM Studio server), so switching vendors is a config change, not a code
-change.
+The key is read by the Node server only and must never use a `VITE_` prefix. For an
+OpenAI-compatible service such as Groq, OpenRouter, Ollama, or LM Studio, select
+`AI_PROVIDER=openai-compatible` and configure `AI_PROVIDER_API_KEY`,
+`AI_PROVIDER_BASE_URL`, and `AI_PROVIDER_MODEL` instead. The React components continue to
+use the same `/api/chat` contract when the provider changes.
 
 ## Scripts
 
