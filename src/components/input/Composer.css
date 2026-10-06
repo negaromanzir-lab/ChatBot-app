@@ -1,0 +1,146 @@
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 16px 14px;
+  border-top: 1px solid var(--color-border);
+  background-color: var(--color-bg);
+}
+
+.composer__notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: var(--content-max-width);
+  width: 100%;
+  margin: 0 auto;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.composer__notice--error {
+  border-color: var(--color-danger);
+  background-color: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.composer__notice-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.composer__retry {
+  padding: 4px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-elevated);
+  color: var(--color-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.composer__retry:hover {
+  background-color: var(--color-surface-hover);
+}
+
+.composer__form {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  width: 100%;
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: 10px 10px 10px 16px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background-color: var(--color-elevated);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast);
+}
+
+.composer__form:focus-within {
+  border-color: var(--color-accent);
+}
+
+.composer__input {
+  flex: 1;
+  min-width: 0;
+  max-height: 200px;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 15px;
+  line-height: 1.5;
+  resize: none;
+  overflow-y: auto;
+}
+
+.composer__input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.composer__input:focus {
+  outline: none;
+}
+
+.composer__input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Round send/stop control. */
+.composer__submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: var(--radius-full);
+  background-color: var(--color-accent);
+  color: var(--color-text-inverted);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.composer__submit:not(:disabled):hover {
+  background-color: var(--color-accent-hover);
+}
+
+.composer__submit:disabled {
+  cursor: not-allowed;
+  background-color: var(--color-surface-active);
+  color: var(--color-text-muted);
+}
+
+.composer__submit--stop {
+  background-color: var(--color-text);
+  color: var(--color-bg);
+}
+
+.composer__submit--stop:hover {
+  background-color: var(--color-surface-active);
+}
+
+.composer__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .composer {
+    padding: 8px 10px 10px;
+  }
+
+  .composer__hint {
+    display: none;
+  }
+}

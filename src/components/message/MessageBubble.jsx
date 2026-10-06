@@ -1,7 +1,7 @@
 import { Avatar } from './Avatar.jsx';
 import { MarkdownContent } from './MarkdownContent.jsx';
 import { MessageActions } from './MessageActions.jsx';
-import { formatAbsoluteDate, formatTime } from '../utils/date.js';
+import { formatAbsoluteDate, formatTime } from '../../utils/date.js';
 import './MessageBubble.css';
 
 /**

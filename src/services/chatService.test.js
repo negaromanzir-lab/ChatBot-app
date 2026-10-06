@@ -45,6 +45,7 @@ describe('chatService', () => {
         id: 'abc',
         sender: 'robot',
         message: 'Hello!',
+        createdAt: expect.any(Number),
       });
     });
 

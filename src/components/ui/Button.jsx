@@ -11,8 +11,8 @@ import './Button.css';
  * means an unlabelled icon button cannot be written by accident.
  */
 
-const Button = forwardRef(function Button(
-  { variant = 'secondary', size, isFullWidth = false, className, children, type = 'button', ...rest },
+export const Button = forwardRef(function Button(
+  { variant = 'secondary', isFullWidth = false, className, children, type = 'button', ...rest },
   ref,
 ) {
   const classes = ['button', `button--${variant}`, isFullWidth ? 'button--block' : null, className]

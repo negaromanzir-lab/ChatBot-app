@@ -1,7 +1,7 @@
-import { useAutoScroll } from '../hooks/useAutoScroll.js';
+import { useAutoScroll } from '../../hooks/useAutoScroll.js';
 import { MessageBubble } from '../message/MessageBubble.jsx';
 import { TypingIndicator } from './TypingIndicator.jsx';
-import { Icon } from '../components/Icon.jsx';
+import { Icon } from '../ui/Icon.jsx';
 import './MessageList.css';
 
 /**

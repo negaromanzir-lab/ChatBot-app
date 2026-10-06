@@ -1,0 +1,166 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 14px 8px;
+}
+
+.sidebar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.sidebar__brand svg {
+  color: var(--color-accent);
+}
+
+/* Only meaningful on mobile, where the drawer needs a way out. */
+.sidebar__close {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .sidebar__close {
+    display: inline-flex;
+  }
+}
+
+.sidebar__new-chat {
+  padding: 6px 14px 10px;
+}
+
+.sidebar__history {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 8px 12px;
+}
+
+.sidebar__empty {
+  margin: 12px 6px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.sidebar__group + .sidebar__group {
+  margin-top: 14px;
+}
+
+.sidebar__group-label {
+  margin: 0 0 4px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.sidebar__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.sidebar__row-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 8px 34px 8px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background-color: transparent;
+  color: var(--color-text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.sidebar__row-button:hover {
+  background-color: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.sidebar__row--active .sidebar__row-button {
+  background-color: var(--color-surface-active);
+  color: var(--color-text);
+}
+
+.sidebar__row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar__row-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* Pinned to the row, revealed on hover/focus so the list reads as history
+   first and a set of controls second. It is always focusable. */
+.sidebar__row-delete {
+  position: absolute;
+  right: 4px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.sidebar__row:hover .sidebar__row-delete,
+.sidebar__row:focus-within .sidebar__row-delete {
+  opacity: 1;
+}
+
+.sidebar__row-delete:hover {
+  color: var(--color-danger);
+}
+
+.sidebar__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.sidebar__profile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar__profile-name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
