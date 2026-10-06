@@ -1,28 +1,11 @@
-import ChatInput from './components/ChatInput.jsx';
-import ChatMessages from './components/ChatMessages.jsx';
-import { useChatConversation } from './features/chat/hooks/useChatConversation.js';
-import './App.css';
+import { ChatPage } from './pages/ChatPage.jsx';
 
 /**
- * Composition root only: wires the conversation hook to the chat components.
- *
- * State, error handling, and the API call all live in `useChatConversation`, so
- * this component has no knowledge of the backend.
+ * Composition root. All state and layout live in `ChatPage`, so this file
+ * stays a one-line mount point.
  */
 function App() {
-  const { messages, isPending, error, sendMessage, clearError } = useChatConversation();
-
-  return (
-    <div className="app-container">
-      <ChatMessages chatMessages={messages} />
-      <ChatInput
-        onSend={sendMessage}
-        isPending={isPending}
-        error={error}
-        onDismissError={clearError}
-      />
-    </div>
-  );
+  return <ChatPage />;
 }
 
 export default App;

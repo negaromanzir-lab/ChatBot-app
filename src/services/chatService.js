@@ -1,4 +1,4 @@
-import { apiRequest } from '../shared/api/httpClient.js';
+import { apiRequest } from './apiClient.js';
 import { createId } from '../utils/id.js';
 
 /**

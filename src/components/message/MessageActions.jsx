@@ -1,4 +1,4 @@
-import { IconButton } from '../components/Button.jsx';
+import { IconButton } from '../ui/Button.jsx';
 import { CopyButton } from './CopyButton.jsx';
 import './MessageActions.css';
 

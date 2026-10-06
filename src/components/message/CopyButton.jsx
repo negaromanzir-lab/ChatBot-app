@@ -1,5 +1,5 @@
-import { useCopyToClipboard } from '../hooks/useCopyToClipboard.js';
-import { Icon } from '../components/Icon.jsx';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard.js';
+import { Icon } from '../ui/Icon.jsx';
 import './CopyButton.css';
 
 /**
