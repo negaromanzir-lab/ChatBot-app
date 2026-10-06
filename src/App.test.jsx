@@ -21,15 +21,16 @@ import { THEME_STORAGE_KEY } from './hooks/useTheme.js';
  */
 vi.mock('./services/chatService.js', async (importOriginal) => ({
   ...(await importOriginal()),
-  requestAssistantReply: vi.fn(),
+  streamAssistantReply: vi.fn(),
 }));
 
 function mockReply(content = 'A backend reply') {
-  vi.mocked(chatService.requestAssistantReply).mockResolvedValue({
+  vi.mocked(chatService.streamAssistantReply).mockResolvedValue({
     id: 'reply-id',
     sender: 'robot',
     message: content,
     createdAt: Date.now(),
+    status: 'complete',
   });
 }
 
@@ -76,7 +77,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /weekend trip/i }));
 
     expect(await screen.findByText('A backend reply')).toBeInTheDocument();
-    expect(chatService.requestAssistantReply).toHaveBeenCalledTimes(1);
+    expect(chatService.streamAssistantReply).toHaveBeenCalledTimes(1);
   });
 
   it('sends the message and renders the assistant reply', async () => {
@@ -84,8 +85,8 @@ describe('App', () => {
 
     await sendMessage('How are you?');
 
-    expect(chatService.requestAssistantReply).toHaveBeenCalledTimes(1);
-    const { messages } = vi.mocked(chatService.requestAssistantReply).mock.calls[0][0];
+    expect(chatService.streamAssistantReply).toHaveBeenCalledTimes(1);
+    const { messages } = vi.mocked(chatService.streamAssistantReply).mock.calls[0][0];
     expect(messages.map((message) => message.message)).toEqual(['How are you?']);
 
     expect(await screen.findByText('A backend reply')).toBeInTheDocument();
@@ -103,7 +104,7 @@ describe('App', () => {
   });
 
   it('surfaces a backend error instead of inventing a reply', async () => {
-    vi.mocked(chatService.requestAssistantReply).mockRejectedValue(
+    vi.mocked(chatService.streamAssistantReply).mockRejectedValue(
       new Error('Could not reach the server. Check that the backend is running.'),
     );
     render(<App />);
@@ -134,7 +135,7 @@ describe('App', () => {
     fireEvent.keyDown(composer(), { key: 'Enter' });
 
     expect(await screen.findByText('A backend reply')).toBeInTheDocument();
-    expect(chatService.requestAssistantReply).toHaveBeenCalledTimes(1);
+    expect(chatService.streamAssistantReply).toHaveBeenCalledTimes(1);
   });
 
   it('inserts a newline on Shift+Enter instead of sending', () => {
@@ -148,12 +149,12 @@ describe('App', () => {
     // The handler must not have intercepted the key, or the browser could not
     // insert the newline.
     expect(notPrevented).toBe(true);
-    expect(chatService.requestAssistantReply).not.toHaveBeenCalled();
+    expect(chatService.streamAssistantReply).not.toHaveBeenCalled();
     expect(textarea).toHaveValue('line one');
   });
 
   it('offers a stop control while a reply is in flight and cancels on click', async () => {
-    vi.mocked(chatService.requestAssistantReply).mockImplementation(
+    vi.mocked(chatService.streamAssistantReply).mockImplementation(
       ({ signal }) =>
         new Promise((_resolve, reject) => {
           signal?.addEventListener('abort', () => {
@@ -194,7 +195,38 @@ describe('App', () => {
     expect(screen.queryByText('A backend reply')).not.toBeInTheDocument();
 
     // Regeneration re-sends history up to the last user message only.
-    const { messages } = vi.mocked(chatService.requestAssistantReply).mock.calls.at(-1)[0];
+    const { messages } = vi.mocked(chatService.streamAssistantReply).mock.calls.at(-1)[0];
     expect(messages.map((message) => message.message)).toEqual(['Hello']);
+  });
+
+  it('renders streamed chunks progressively and finalizes without a duplicate', async () => {
+    let finishStream;
+    vi.mocked(chatService.streamAssistantReply).mockImplementation(
+      ({ onDelta }) =>
+        new Promise((resolve) => {
+          onDelta('First', {
+            id: 'streamed-reply',
+            sender: 'robot',
+            message: 'First',
+            status: 'streaming',
+          });
+          finishStream = () =>
+            resolve({
+              id: 'streamed-reply',
+              sender: 'robot',
+              message: 'First and final',
+              status: 'complete',
+            });
+        }),
+    );
+    render(<App />);
+
+    await sendMessage('Stream this');
+    expect(await screen.findByText('First')).toBeInTheDocument();
+    expect(transcript().getAllByText('First')).toHaveLength(1);
+
+    finishStream();
+    expect(await screen.findByText('First and final')).toBeInTheDocument();
+    expect(transcript().getAllByText('First and final')).toHaveLength(1);
   });
 });

@@ -24,7 +24,7 @@ export class ApiClientError extends Error {
   }
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/+$/, '');
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '');
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
@@ -103,6 +103,86 @@ export async function apiRequest(path, options = {}) {
   }
 
   return payload;
+}
+
+/**
+ * Starts an HTTP streaming request and returns its Response for the calling
+ * service to consume. Stream framing is deliberately left to the feature layer.
+ */
+export async function apiStream(path, options = {}) {
+  const {
+    method = 'POST',
+    body,
+    signal,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+  } = options;
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers:
+        body === undefined
+          ? { accept: 'text/event-stream' }
+          : {
+              accept: 'text/event-stream',
+              'content-type': 'application/json',
+            },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: combinedSignal,
+    });
+  } catch (error) {
+    if (signal?.aborted) {
+      throw new ApiClientError('Request cancelled.', { code: 'CANCELLED' });
+    }
+    if (timeoutSignal.aborted) {
+      throw new ApiClientError(
+        'The server took too long to respond. Please try again.',
+        { code: 'TIMEOUT' },
+      );
+    }
+    throw new ApiClientError(
+      'Could not reach the server. Check that the backend is running.',
+      { code: 'NETWORK_ERROR', cause: error },
+    );
+  }
+
+  if (!response.ok) {
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new ApiClientError(
+        `The server returned an unexpected response (HTTP ${response.status}).`,
+        { status: response.status, code: 'INVALID_RESPONSE' },
+      );
+    }
+    throw new ApiClientError(
+      payload?.error?.message ?? `Request failed (HTTP ${response.status}).`,
+      {
+        status: response.status,
+        code: payload?.error?.code ?? 'UNKNOWN',
+        details: payload?.error?.details,
+      },
+    );
+  }
+
+  if (!response.headers.get('content-type')?.includes('text/event-stream')) {
+    throw new ApiClientError('The server returned an unexpected streaming response.', {
+      status: response.status,
+      code: 'INVALID_RESPONSE',
+    });
+  }
+  if (!response.body) {
+    throw new ApiClientError('The server returned an empty streaming response.', {
+      status: response.status,
+      code: 'INVALID_RESPONSE',
+    });
+  }
+
+  return response;
 }
 
 export { API_BASE_URL };

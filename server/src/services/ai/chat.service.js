@@ -67,7 +67,52 @@ export function createChatService({ provider } = {}) {
     return { role: 'assistant', content: reply.content };
   }
 
-  return { generateAssistantReply, getProvider };
+  async function* streamAssistantReply(messages, options = {}) {
+    const activeProvider = getProvider();
+    const streamResponse = activeProvider.streamResponse;
+
+    if (typeof streamResponse !== 'function') {
+      logger.error(
+        { provider: activeProvider.name },
+        'AI provider does not implement streamResponse',
+      );
+      throw ApiError.internal(
+        'AI_PROVIDER_STREAM_NOT_SUPPORTED',
+        'The configured AI provider does not support streaming.',
+      );
+    }
+
+    logger.debug(
+      {
+        provider: activeProvider.name,
+        messageCount: messages.length,
+        roles: messages.map((message) => message.role),
+      },
+      'Streaming assistant reply',
+    );
+
+    let content = '';
+    for await (const chunk of streamResponse.call(activeProvider, messages, options)) {
+      if (typeof chunk !== 'string' || chunk.length === 0) continue;
+      content += chunk;
+      yield chunk;
+    }
+
+    if (content.length === 0) {
+      logger.error({ provider: activeProvider.name }, 'Provider stream returned no message content');
+      throw ApiError.badGateway(
+        'AI_PROVIDER_EMPTY_RESPONSE',
+        'The AI provider returned an empty response.',
+      );
+    }
+
+    logger.info(
+      { provider: activeProvider.name, contentLength: content.length },
+      'Assistant reply stream completed',
+    );
+  }
+
+  return { generateAssistantReply, streamAssistantReply, getProvider };
 }
 
 export default createChatService;

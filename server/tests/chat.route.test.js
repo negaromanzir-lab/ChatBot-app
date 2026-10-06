@@ -29,6 +29,9 @@ function createFakeProvider(content = 'Hello! How can I help?', name = 'fake') {
   return {
     name,
     generateReply: vi.fn().mockResolvedValue({ role: 'assistant', content }),
+    async *streamResponse() {
+      yield content;
+    },
   };
 }
 
@@ -51,12 +54,21 @@ async function startServer({ provider: override, rateLimiter } = {}) {
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 }
 
-function postChat(body, { headers = {} } = {}) {
+function postChat(body, { headers = {}, signal } = {}) {
   return fetch(`${baseUrl}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...headers },
     body: typeof body === 'string' ? body : JSON.stringify(body),
+    signal,
   });
+}
+
+async function readSseEvents(response) {
+  const text = await response.text();
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('data: '))
+    .map((line) => JSON.parse(line.slice(6)));
 }
 
 const validBody = { messages: [{ role: 'user', content: 'Hello' }] };
@@ -103,6 +115,119 @@ describe('POST /api/chat', () => {
       });
 
       expect(response.status).toBe(200);
+    });
+
+    it('streams provider chunks and finalizes one assistant message', async () => {
+      await startServer({
+        provider: {
+          name: 'streaming-fake',
+          generateReply: vi.fn(),
+          async *streamResponse(conversation, { signal }) {
+            expect(conversation).toEqual(validBody.messages);
+            expect(signal).toBeInstanceOf(AbortSignal);
+            yield 'Hello ';
+            yield 'there!';
+          },
+        },
+      });
+
+      const response = await postChat({ ...validBody, stream: true });
+      const events = await readSseEvents(response);
+
+      expect(response.headers.get('content-type')).toContain('text/event-stream');
+      expect(events).toEqual([
+        { type: 'delta', content: 'Hello ' },
+        { type: 'delta', content: 'there!' },
+        {
+          type: 'done',
+          message: { role: 'assistant', content: 'Hello there!' },
+        },
+      ]);
+    });
+
+    it('returns provider errors as safe stream events', async () => {
+      await startServer({
+        provider: {
+          name: 'streaming-failure',
+          generateReply: vi.fn(),
+          async *streamResponse() {
+            yield 'partial';
+            throw ApiError.badGateway(
+              'AI_PROVIDER_UNAVAILABLE',
+              'The AI provider is currently unavailable.',
+            );
+          },
+        },
+      });
+
+      const response = await postChat({ ...validBody, stream: true });
+      const events = await readSseEvents(response);
+
+      expect(events).toEqual([
+        { type: 'delta', content: 'partial' },
+        {
+          type: 'error',
+          error: expect.objectContaining({
+            code: 'AI_PROVIDER_UNAVAILABLE',
+            message: 'The AI provider is currently unavailable.',
+          }),
+        },
+      ]);
+    });
+
+    it('aborts the provider stream when the browser disconnects', async () => {
+      let resolveProviderAbort;
+      const providerAbort = new Promise((resolve) => {
+        resolveProviderAbort = resolve;
+      });
+
+      await startServer({
+        provider: {
+          name: 'cancellable-stream',
+          generateReply: vi.fn(),
+          async *streamResponse(_conversation, { signal }) {
+            yield 'first chunk';
+            await new Promise((resolve) => {
+              if (signal.aborted) {
+                resolve();
+                return;
+              }
+              signal.addEventListener(
+                'abort',
+                () => {
+                  resolveProviderAbort(true);
+                  resolve();
+                },
+                { once: true },
+              );
+            });
+          },
+        },
+      });
+
+      const browserController = new AbortController();
+      const response = await postChat(
+        { ...validBody, stream: true },
+        { signal: browserController.signal },
+      );
+      await response.body.getReader().read();
+      browserController.abort();
+
+      await expect(
+        Promise.race([
+          providerAbort,
+          new Promise((resolve) => setTimeout(() => resolve(false), 1000)),
+        ]),
+      ).resolves.toBe(true);
+    });
+
+    it('returns a normal JSON response when streaming was not requested', async () => {
+      const response = await postChat(validBody);
+
+      expect(response.headers.get('content-type')).toContain('application/json');
+      await expect(response.json()).resolves.toEqual({
+        message: { role: 'assistant', content: 'Hello! How can I help?' },
+      });
     });
   });
 

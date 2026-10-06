@@ -28,6 +28,7 @@ export const chatRequestSchema = z.object({
     )
     .min(1, 'messages must contain at least one message')
     .max(config.limits.maxMessages, `messages must contain at most ${config.limits.maxMessages} messages`),
+  stream: z.boolean().default(false),
 });
 
 export function createChatRouter({ chatController, chatService, rateLimiter } = {}) {

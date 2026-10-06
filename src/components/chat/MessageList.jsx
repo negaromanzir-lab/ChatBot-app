@@ -14,9 +14,7 @@ import './MessageList.css';
  */
 export function MessageList({ messages, isPending, onRegenerate }) {
   const { containerRef, isAtBottom, handleScroll, scrollToLatest } = useAutoScroll(
-    // Length is the right key: streaming text changes content without changing
-    // length, and non-streaming replies are atomic anyway.
-    `${messages.length}:${isPending}`,
+    `${messages.length}:${messages.at(-1)?.message?.length ?? 0}:${isPending}`,
   );
 
   const lastMessage = messages[messages.length - 1];
