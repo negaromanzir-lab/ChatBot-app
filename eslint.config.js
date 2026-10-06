@@ -5,9 +5,10 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 
 export default [
-  { ignores: ['dist'] },
+  { ignores: ['dist', 'coverage'] },
   {
-    files: ['**/*.{js,jsx}'],
+    // Browser code: React, DOM globals, hooks rules.
+    files: ['src/**/*.{js,jsx}'],
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
@@ -34,6 +35,22 @@ export default [
         { allowConstantExport: true },
       ],
       'react/prop-types': 'off'
+    },
+  },
+  {
+    // Server code: Node globals, no React rules. Keeping this separate from the
+    // browser block means a stray browser global in server code is flagged
+    // rather than silently allowed.
+    files: ['server/**/*.js', 'eslint.config.js', 'vite.config.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      globals: globals.node,
+      sourceType: 'module',
+    },
+    plugins: {},
+    rules: {
+      ...js.configs.recommended.rules,
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
 ]

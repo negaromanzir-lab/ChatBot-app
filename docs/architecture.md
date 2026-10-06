@@ -1,25 +1,42 @@
 # Architecture and migration plan
 
-## Purpose and current baseline
+## Status
 
-This document describes the intended incremental evolution of the existing React 19
-and Vite application. It is an architecture target, not a claim that the planned
-backend or product features already exist.
+| Phase | Scope | Status |
+| --- | --- | --- |
+| 0 | Architecture and repository preparation | Complete |
+| 1 | Core chat interaction (form submit, a11y, pending/error states) | Complete |
+| 2 | Separate UI from chat orchestration | Complete |
+| 3 | Backend/API foundation (Express, validation, CORS, rate limits, logging) | Complete |
+| 4 | Provider abstraction and timeout/error mapping | Complete (non-streaming) |
+| 5 | Persistence and authentication | Not started |
+| 6 | File uploads | Not started |
+| 7 | Settings and model controls | Not started |
+| 8 | Production hardening | Not started |
 
-The current application remains the runnable baseline:
+Streaming (Phase 4's remaining item), authentication, persistence, and uploads are
+deliberately absent. The app is runnable and verified at its current checkpoint.
+
+## Current baseline
+
+The application as it stands after Phases 0–4:
 
 - `src/main.jsx` mounts `App` inside React Strict Mode.
-- `src/App.jsx` owns an in-memory array of seeded user and robot messages.
-- `src/components/ChatInput.jsx` owns composer state and calls
-  `supersimpledev` directly to generate a reply.
-- `src/components/ChatMessages.jsx` renders the message list and scrolls it to
-  the newest message.
-- `src/components/ChatMessage.jsx` renders a sender-specific bubble and avatar.
-- Styling lives alongside the app and components in CSS files.
+- `src/App.jsx` is a composition root only: it calls `useChatConversation` and
+  wires the result into the chat components.
+- `src/features/chat/hooks/useChatConversation.js` owns the message list, the
+  pending flag, and the error state, and cancels in-flight work on unmount.
+- `src/features/chat/services/chatService.js` is the only frontend module that
+  knows the chat endpoint exists, and maps between the UI view model
+  (`sender`/`message`) and the API contract (`role`/`content`).
+- `src/shared/api/httpClient.js` wraps `fetch` with a timeout and a single error
+  shape.
+- `src/components/ChatInput.jsx` and `ChatMessages.jsx` are presentational.
+- `server/` provides the Express API described below. `supersimpledev` has been
+  removed from the project entirely.
 
-There is no API server, authentication, persistence, file storage, or real AI
-provider integration yet. The `supersimpledev` dependency and current chat flow
-are intentionally retained during preparation and migration.
+There is no authentication, persistence, or file storage yet, and the default
+provider is an offline deterministic stand-in rather than a real model.
 
 ## Architecture decisions
 
@@ -204,6 +221,92 @@ npm run build
 npm run lint
 ```
 
-All four must pass for Phase 0 to be considered complete. `npm test` and
+All four must pass for a phase to be considered complete. `npm test` and
 `npm run build` both execute the component tree, so a regression in the chat
 flow fails either one.
+
+## Phases 1–4: what was built
+
+### Phase 1 — Core chat interaction
+
+`ChatInput` is now a `<form>` with a visually-hidden `<label>`, `htmlFor`, and
+`type="submit"`, so Enter sends and the input has an accessible name. The send
+button is disabled while the draft is empty or a reply is in flight, which
+prevents duplicate submissions structurally rather than by convention. Errors
+render in a `role="alert"` banner that clears when the user starts typing.
+
+### Phase 2 — UI separated from orchestration
+
+Conversation state, the pending flag, the error, and cancellation moved into
+`useChatConversation`. Components render state and report intent. The AI call is
+a parameter of the hook (`service`), so tests drive the flow without a network or
+module mocking. The UI view model (`sender: 'robot'`) is translated to the API
+contract (`role: 'assistant'`) inside `chatService.js` only.
+
+### Phase 3 — Backend foundation
+
+`server/` implements the layered structure in the layout above:
+`server.js` (lifecycle) → `app.js` (middleware composition, no `listen`) →
+`routes/` → `controllers/` → `services/ai/` → `providers/`.
+
+- `config/env.js` parses `process.env` once through a zod schema and exits with
+  actionable messages on invalid input. Nothing else reads `process.env`.
+- `middleware/errorHandler.js` produces one response envelope. `ApiError`
+  instances return their message and code; anything else returns a generic
+  message, so stack traces and internal paths never reach the client.
+- `middleware/validate.js` replaces `req.body` with the *parsed* value, so
+  downstream code only ever sees schema-valid data and unknown keys are stripped.
+- `middleware/rateLimit.js` limits per IP and advertises draft-7 `RateLimit`
+  headers. Per-IP is the correct trade-off only while callers are anonymous.
+- `config/logger.js` uses pino with `redact` covering `authorization`, `cookie`,
+  `apiKey`, and request bodies, so conversation content and credentials stay out
+  of log sinks by construction.
+- `server.js` sets `requestTimeout`, `headersTimeout`, and `keepAliveTimeout`,
+  and handles `SIGTERM`/`SIGINT` with a forced-exit backstop.
+- `vite.config.js` proxies `/api` to Express so development stays
+  same-origin. The target is read with `loadEnv(mode, cwd, '')` under the name
+  `API_PROXY_TARGET` — deliberately *not* `VITE_`-prefixed, because it is read by
+  Node during config resolution, not by the browser.
+
+### Phase 4 — Provider abstraction
+
+`services/ai/providers/index.js` resolves one adapter from `AI_PROVIDER`. The
+controller never imports a provider module.
+
+- `openaiCompatible.provider.js` targets any OpenAI-compatible
+  `/chat/completions` endpoint, so changing vendors is a config change. It bounds
+  the call with `AbortSignal.timeout` and maps upstream failures to distinct
+  codes: `AI_PROVIDER_TIMEOUT` (504), `AI_PROVIDER_UNAVAILABLE` (503),
+  `AI_PROVIDER_RATE_LIMITED` (503), `AI_PROVIDER_UNAUTHORIZED` (502), and
+  `AI_PROVIDER_EMPTY_RESPONSE` (502).
+- `local.provider.js` is an offline deterministic stand-in. It is selected
+  explicitly, never as a silent fallback, and it states plainly that no model is
+  configured. This is what keeps decision 8 intact: a misconfigured real provider
+  surfaces as an error instead of being masked by a fabricated success.
+
+The API key is read only in the provider module, attached as an `Authorization`
+header, redacted from logs, and never included in any response. This was
+verified against a mock OpenAI-compatible endpoint: the upstream received
+`Authorization: Bearer <key>` while the browser bundle contained no key material.
+
+### Verification performed
+
+- `npm test` — 52 tests across 4 files: frontend App behaviour, the
+  UI↔API mapping, route-level behaviour through real `fetch` against an
+  ephemeral port, and provider adapter error mapping.
+- `npm run lint`, `npm run build` — clean.
+- Browser round trip through the Vite proxy with both processes running: real
+  `POST /api/chat` requests, correct rendering, cleared composer, Enter-to-send,
+  0 console errors.
+- Real provider path against a mock upstream: conversation forwarded intact,
+  bearer token attached server-side.
+
+### Known limitations
+
+- Responses are not streamed; the client waits for the complete reply.
+- No authentication, so rate limiting is per IP and conversations are lost on
+  reload.
+- The default provider is offline and says so. Real replies require
+  `AI_PROVIDER_API_KEY` on the server.
+- CORS is an origin allowlist, but there is no authentication layer, so it is
+  not an authorization control.

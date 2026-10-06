@@ -4,16 +4,30 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently --names \"api,web\" --prefix-colors \"green,cyan\" --kill-others \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:client": "vite",
+    "dev:server": "node --watch server/src/server.js",
     "build": "vite build",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:watch": "vitest",
     "preview": "vite preview"
   },
   "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
+    "highlight.js": "^11.12.0",
+    "pino": "^10.4.0",
+    "pino-http": "^11.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "supersimpledev": "^8.6.4"
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",
@@ -22,6 +36,7 @@
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^10.0.5",
     "eslint": "^9.15.0",
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^5.0.0",

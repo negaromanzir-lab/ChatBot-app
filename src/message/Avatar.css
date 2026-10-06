@@ -1,0 +1,16 @@
+.avatar {
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  background-color: var(--color-surface);
+}
+
+.avatar--sm {
+  width: 24px;
+  height: 24px;
+}
+
+.avatar--md {
+  width: 30px;
+  height: 30px;
+}

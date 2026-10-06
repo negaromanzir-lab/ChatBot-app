@@ -1,0 +1,52 @@
+.message-bubble {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+}
+
+.message-bubble--user {
+  justify-content: flex-end;
+}
+
+.message-bubble__content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.message-bubble--user .message-bubble__content {
+  align-items: flex-end;
+  max-width: min(80%, 640px);
+}
+
+/*
+ * The user's bubble is a surface; the assistant's prose sits directly on the
+ * page background. Giving both a bubble would make long answers feel like a
+ * quotation.
+ */
+.message-bubble--user .message-bubble__body {
+  padding: 10px 16px;
+  border-radius: var(--radius-lg);
+  background-color: var(--color-bubble-user);
+  color: var(--color-bubble-user-text);
+}
+
+.message-bubble--assistant .message-bubble__content {
+  flex: 1;
+}
+
+.message-bubble__text {
+  margin: 0;
+  /* Preserves the newlines a multi-line composer submission contains. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.message-bubble__timestamp {
+  margin: 4px 4px 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1;
+}

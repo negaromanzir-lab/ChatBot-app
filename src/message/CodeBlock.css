@@ -1,0 +1,116 @@
+.code-block {
+  margin: 14px 0;
+  border: 1px solid var(--color-code-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-code-bg);
+  overflow: hidden;
+}
+
+.code-block__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid var(--color-code-border);
+  background-color: var(--color-surface);
+}
+
+.code-block__language {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.code-block__pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-code-text);
+  tab-size: 2;
+}
+
+/*
+ * Syntax colours are driven by theme tokens rather than by importing
+ * highlight.js's own stylesheets. Those are flat `.hljs-*` rules with no theme
+ * hook, so two of them cannot coexist; mapping the token classes onto custom
+ * properties means code re-themes with everything else and ships no extra CSS.
+ */
+.code-block__pre .hljs-comment,
+.code-block__pre .hljs-quote {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+
+.code-block__pre .hljs-keyword,
+.code-block__pre .hljs-selector-tag,
+.code-block__pre .hljs-doctag,
+.code-block__pre .hljs-formula {
+  color: var(--syntax-keyword);
+}
+
+.code-block__pre .hljs-string,
+.code-block__pre .hljs-regexp,
+.code-block__pre .hljs-addition,
+.code-block__pre .hljs-attribute,
+.code-block__pre .hljs-meta .hljs-string {
+  color: var(--syntax-string);
+}
+
+.code-block__pre .hljs-number,
+.code-block__pre .hljs-symbol,
+.code-block__pre .hljs-bullet,
+.code-block__pre .hljs-link,
+.code-block__pre .hljs-selector-attr,
+.code-block__pre .hljs-selector-pseudo,
+.code-block__pre .hljs-template-variable,
+.code-block__pre .hljs-variable {
+  color: var(--syntax-number);
+}
+
+.code-block__pre .hljs-title,
+.code-block__pre .hljs-section,
+.code-block__pre .hljs-name,
+.code-block__pre .hljs-selector-id,
+.code-block__pre .hljs-selector-class {
+  color: var(--syntax-title);
+}
+
+.code-block__pre .hljs-title.function_,
+.code-block__pre .hljs-title.class_,
+.code-block__pre .hljs-built_in,
+.code-block__pre .hljs-class .hljs-title {
+  color: var(--syntax-function);
+}
+
+.code-block__pre .hljs-type,
+.code-block__pre .hljs-params,
+.code-block__pre .hljs-property,
+.code-block__pre .hljs-attr,
+.code-block__pre .hljs-template-tag {
+  color: var(--syntax-type);
+}
+
+.code-block__pre .hljs-literal,
+.code-block__pre .hljs-meta,
+.code-block__pre .hljs-meta .hljs-keyword,
+.code-block__pre .hljs-subst {
+  color: var(--syntax-literal);
+}
+
+.code-block__pre .hljs-deletion {
+  color: var(--syntax-deletion);
+}
+
+.code-block__pre .hljs-emphasis {
+  font-style: italic;
+}
+
+.code-block__pre .hljs-strong {
+  font-weight: 600;
+}

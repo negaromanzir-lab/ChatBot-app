@@ -1,0 +1,53 @@
+.message-list {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.message-list__scroll {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+}
+
+.message-list__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: 28px 24px 12px;
+}
+
+/* Room for the composer to sit close to the last message. */
+@media (max-width: 768px) {
+  .message-list__inner {
+    padding: 18px 16px 8px;
+    gap: 20px;
+  }
+}
+
+.message-list__jump {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background-color: var(--color-elevated);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.message-list__jump:hover {
+  background-color: var(--color-surface-hover);
+  color: var(--color-text);
+}

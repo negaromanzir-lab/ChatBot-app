@@ -1,41 +1,28 @@
-import { useState } from 'react'
-import { ChatInput } from './components/ChatInput';
-import ChatMessages from './components/ChatMessages';
-import './App.css'
+import ChatInput from './components/ChatInput.jsx';
+import ChatMessages from './components/ChatMessages.jsx';
+import { useChatConversation } from './features/chat/hooks/useChatConversation.js';
+import './App.css';
 
+/**
+ * Composition root only: wires the conversation hook to the chat components.
+ *
+ * State, error handling, and the API call all live in `useChatConversation`, so
+ * this component has no knowledge of the backend.
+ */
 function App() {
-  const [chatMessages, setChatMessages] = useState([{
-    message: 'hello chatbot',
-    sender: 'user',
-    id: 'id1'
-  }, {
-    message: 'Hello! How can I help you?',
-    sender: 'robot',
-    id: 'id2'
-  }, {
-    message: 'can you get me todays date?',
-    sender: 'user',
-    id: 'id3'
-  }, {
-    message: 'Today is September 27',
-    sender: 'robot',
-    id: 'id4'
-  }]);
-  // const [chatMessages, setChatMessages] = array;
-  // const chatMessages = array[0];
-  // const setChatMessages = array[1];
+  const { messages, isPending, error, sendMessage, clearError } = useChatConversation();
 
   return (
     <div className="app-container">
-      <ChatMessages
-        chatMessages={chatMessages}
-      />
+      <ChatMessages chatMessages={messages} />
       <ChatInput
-        chatMessages={chatMessages}
-        setChatMessages={setChatMessages}
+        onSend={sendMessage}
+        isPending={isPending}
+        error={error}
+        onDismissError={clearError}
       />
     </div>
   );
 }
 
-export default App
+export default App;
