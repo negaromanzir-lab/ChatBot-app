@@ -190,7 +190,7 @@ describe('openai-compatible provider', () => {
 
   describe('configuration guard', () => {
     it('refuses to construct without an API key', () => {
-      expect(() => createOpenAICompatibleProvider({ apiKey: undefined, fetchImpl: stubFetch() }))
+      expect(() => createOpenAICompatibleProvider({ apiKey: '', fetchImpl: stubFetch() }))
         .toThrowError(/not configured/i);
     });
   });

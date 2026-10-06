@@ -64,12 +64,26 @@ Request:
 
 ```json
 {
-  "messages": [{ "role": "user", "content": "Hello" }]
+  "messages": [{ "role": "user", "content": "Hello" }],
+  "stream": true
 }
 ```
 
 `role` must be `user` or `assistant`; `content` must be a non-empty string. Unknown fields
-are stripped rather than forwarded to the provider.
+are stripped rather than forwarded to the provider. `stream` is optional and defaults to
+`false` for compatibility with JSON clients. The React app requests `stream: true` and
+receives Server-Sent Events:
+
+```text
+data: {"type":"delta","content":"Hello"}
+
+data: {"type":"done","message":{"role":"assistant","content":"Hello there"}}
+```
+
+Provider failures after streaming begins use a final `error` event with a safe error code
+and message. If the connection ends before `done`, the frontend marks the reply interrupted
+and offers retry. The Stop Generating control aborts the browser request, which cancels the
+server's provider stream.
 
 Response:
 

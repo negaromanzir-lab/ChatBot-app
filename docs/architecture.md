@@ -8,14 +8,14 @@
 | 1 | Core chat interaction (form submit, a11y, pending/error states) | Complete |
 | 2 | Separate UI from chat orchestration | Complete |
 | 3 | Backend/API foundation (Express, validation, CORS, rate limits, logging) | Complete |
-| 4 | Provider abstraction and timeout/error mapping | Complete (non-streaming) |
+| 4 | Provider abstraction, timeout/error mapping, and SSE streaming | Complete |
 | 5 | Persistence and authentication | Not started |
 | 6 | File uploads | Not started |
 | 7 | Settings and model controls | Not started |
 | 8 | Production hardening | Not started |
 
-Streaming (Phase 4's remaining item), authentication, persistence, and uploads are
-deliberately absent. The app is runnable and verified at its current checkpoint.
+Authentication, persistence, and uploads remain deliberately absent. The app is
+runnable and verified at its current checkpoint.
 
 ## Current baseline
 
@@ -268,7 +268,7 @@ contract (`role: 'assistant'`) inside `chatService.js` only.
   `API_PROXY_TARGET` — deliberately *not* `VITE_`-prefixed, because it is read by
   Node during config resolution, not by the browser.
 
-### Phase 4 — Provider abstraction
+### Phase 4 — Provider abstraction and streaming
 
 `services/ai/providers/index.js` resolves one adapter from `AI_PROVIDER`. The
 controller never imports a provider module.
@@ -291,14 +291,22 @@ controller never imports a provider module.
 
 The key is resolved in server configuration and is used only in the provider's
 `Authorization` header. It is not included in API responses or error logs.
-`OPENAI_API_KEY` must not use the `VITE_` prefix. `POST /api/chat` remains a
-non-streaming HTTP response for now; exposing provider streaming to the browser
-requires a later API/client transport change.
+`OPENAI_API_KEY` must not use the `VITE_` prefix.
+
+`POST /api/chat` accepts an optional `stream: true` flag. The legacy JSON response
+is retained when the flag is omitted; the React chat service opts into SSE. The
+provider contract yields text deltas independently of vendor framing, and the
+controller translates those into `delta`, `done`, and `error` SSE events. This
+keeps the client and HTTP layer independent of OpenAI-specific stream events, so
+future Gemini or Claude adapters can implement the same async-iterable contract.
+The request abort signal flows from browser fetch through Express into the
+provider, and the frontend uses one stable message ID to update the partial reply
+and replace it with the final message rather than adding a duplicate.
 
 ### Verification performed
 
-- `npm test` — frontend behavior and mapping, real HTTP route tests, and
-  provider request/response, streaming, and error tests.
+- `npm test` — frontend behavior and progressive rendering, SSE service and
+  route tests, plus provider request/response, streaming, and error tests.
 - `npm run lint` — clean.
 - `npm run build` — succeeds; Vite reports the existing large-chunk advisory.
 - Browser round trip through the Vite proxy with both processes running: real
@@ -309,8 +317,6 @@ requires a later API/client transport change.
 
 ### Known limitations
 
-- The OpenAI provider supports streaming, but `POST /api/chat` and the client
-  currently use a complete-response request/response.
 - No authentication, so rate limiting is per IP and conversations are lost on
   reload.
 - The default provider is offline and says so. Direct OpenAI replies require

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { requestAssistantReply, createUserMessage } from '../services/chatService.js';
+import { streamAssistantReply, createUserMessage } from '../services/chatService.js';
 
 /**
  * Owns the network lifecycle of a conversation: sending, regenerating, and
@@ -27,12 +27,13 @@ function findLastUserMessageIndex(messages) {
  * @param {Function} params.setMessages Writer for the conversation, accepting an updater.
  * @param {Function} [params.service]
  */
-export function useChatRequest({ messages, setMessages, service = requestAssistantReply } = {}) {
+export function useChatRequest({ messages, setMessages, service = streamAssistantReply } = {}) {
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState(null);
   const [wasStopped, setWasStopped] = useState(false);
 
   const abortControllerRef = useRef(null);
+  const streamedReplyIdRef = useRef(null);
   // Guards against a second request slipping in before React has re-rendered
   // with isPending=true, which would interleave two conversations.
   const inFlightRef = useRef(false);
@@ -49,6 +50,7 @@ export function useChatRequest({ messages, setMessages, service = requestAssista
       setIsPending(true);
       setError(null);
       setWasStopped(false);
+      streamedReplyIdRef.current = null;
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -57,9 +59,39 @@ export function useChatRequest({ messages, setMessages, service = requestAssista
         const reply = await service({
           messages: conversation,
           signal: controller.signal,
+          onDelta: (_delta, partialReply) => {
+            streamedReplyIdRef.current = partialReply.id;
+            setMessages((current) => {
+              const existingIndex = current.findIndex(
+                (message) => message.id === partialReply.id,
+              );
+              if (existingIndex === -1) return [...current, partialReply];
+              return current.map((message) =>
+                message.id === partialReply.id ? partialReply : message,
+              );
+            });
+          },
         });
-        setMessages((current) => [...current, reply]);
+        setMessages((current) => {
+          const existing = current.some((message) => message.id === reply.id);
+          if (!existing) return [...current, reply];
+          return current.map((message) => (message.id === reply.id ? reply : message));
+        });
       } catch (caught) {
+        if (streamedReplyIdRef.current) {
+          const finalStatus =
+            caught?.code === 'CANCELLED' || controller.signal.aborted
+              ? 'stopped'
+              : 'interrupted';
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === streamedReplyIdRef.current
+                ? { ...message, status: finalStatus }
+                : message,
+            ),
+          );
+        }
+
         if (caught?.code === 'CANCELLED' || controller.signal.aborted) {
           // The user asked for this. Not an error, but the reply is missing.
           setWasStopped(true);
@@ -74,6 +106,7 @@ export function useChatRequest({ messages, setMessages, service = requestAssista
       } finally {
         inFlightRef.current = false;
         abortControllerRef.current = null;
+        streamedReplyIdRef.current = null;
         setIsPending(false);
       }
     },

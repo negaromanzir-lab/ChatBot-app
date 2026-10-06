@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   requestAssistantReply,
+  streamAssistantReply,
   toApiMessages,
   toChatMessage,
 } from './chatService.js';
@@ -19,6 +20,15 @@ describe('chatService', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok,
       status,
+      headers: new Headers({
+        'content-type': 'text/event-stream; charset=utf-8',
+      }),
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(response));
+          controller.close();
+        },
+      }),
       json: async () => response,
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -105,6 +115,76 @@ describe('chatService', () => {
       await expect(
         requestAssistantReply({ messages: [{ id: '1', sender: 'user', message: 'x' }] }),
       ).rejects.toThrow(/malformed/i);
+    });
+  });
+
+  describe('streamAssistantReply', () => {
+    function sse(...events) {
+      return events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('');
+    }
+
+    it('sends the stream flag, reports deltas, and returns one finalized message', async () => {
+      const fetchMock = stubFetch(
+        sse(
+          { type: 'delta', content: 'Hello ' },
+          { type: 'delta', content: 'there' },
+          { type: 'done', message: { role: 'assistant', content: 'Hello there' } },
+        ),
+      );
+      const onDelta = vi.fn();
+
+      const reply = await streamAssistantReply({
+        messages: [{ id: '1', sender: 'user', message: 'Hello' }],
+        onDelta,
+      });
+
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+        messages: [{ role: 'user', content: 'Hello' }],
+        stream: true,
+      });
+      expect(onDelta).toHaveBeenNthCalledWith(
+        1,
+        'Hello ',
+        expect.objectContaining({ message: 'Hello ', status: 'streaming' }),
+      );
+      expect(onDelta).toHaveBeenNthCalledWith(
+        2,
+        'there',
+        expect.objectContaining({ message: 'Hello there', status: 'streaming' }),
+      );
+      expect(reply).toMatchObject({
+        sender: 'robot',
+        message: 'Hello there',
+        status: 'complete',
+      });
+      expect(reply.id).toBe(onDelta.mock.calls[0][1].id);
+    });
+
+    it('surfaces streamed provider errors', async () => {
+      stubFetch(
+        sse({
+          type: 'error',
+          error: {
+            code: 'AI_PROVIDER_UNAVAILABLE',
+            message: 'The provider is unavailable.',
+          },
+        }),
+      );
+
+      await expect(
+        streamAssistantReply({ messages: [{ sender: 'user', message: 'Hello' }] }),
+      ).rejects.toMatchObject({
+        code: 'AI_PROVIDER_UNAVAILABLE',
+        message: 'The provider is unavailable.',
+      });
+    });
+
+    it('treats an ended stream without a final event as interrupted', async () => {
+      stubFetch(sse({ type: 'delta', content: 'partial' }));
+
+      await expect(
+        streamAssistantReply({ messages: [{ sender: 'user', message: 'Hello' }] }),
+      ).rejects.toMatchObject({ code: 'STREAM_INTERRUPTED' });
     });
   });
 });
