@@ -31,9 +31,18 @@ export function Composer({
   onDismissError,
   wasStopped = false,
   onDismissStopped,
+  uploads = [],
+  isUploading = false,
+  onUploadFiles,
+  onDownloadUpload,
+  onDeleteUpload,
+  uploadError = null,
+  onDismissUploadError,
+  supportsVision,
 }) {
   const [draft, setDraft] = useState('');
   const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const isDraftEmpty = draft.trim().length === 0;
 
@@ -90,6 +99,18 @@ export function Composer({
         </div>
       )}
 
+      {uploadError && (
+        <div className="composer__notice composer__notice--error" role="alert">
+          <span className="composer__notice-text">{uploadError}</span>
+          <IconButton
+            icon="close"
+            label="Dismiss upload error"
+            size="sm"
+            onClick={() => onDismissUploadError?.()}
+          />
+        </div>
+      )}
+
       {wasStopped && !isPending && (
         <div className="composer__notice" role="status">
           <span className="composer__notice-text">Generation stopped.</span>
@@ -107,7 +128,65 @@ export function Composer({
         </div>
       )}
 
+      {uploads.length > 0 && (
+        <ul className="composer__uploads" aria-label="Conversation files">
+          {uploads.map((upload) => (
+            <li className="composer__upload" key={upload.id}>
+              <button
+                type="button"
+                className="composer__upload-name"
+                onClick={() => onDownloadUpload?.(upload)}
+                aria-label={`Download ${upload.name}`}
+                title={`Download ${upload.name}`}
+              >
+                <Icon name="attach" size={14} />
+                <span>{upload.name}</span>
+              </button>
+              <IconButton
+                icon="close"
+                label={`Remove ${upload.name}`}
+                size="sm"
+                onClick={() => onDeleteUpload?.(upload)}
+                disabled={isUploading || isPending}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {supportsVision === false && uploads.some((upload) => upload.contentType?.startsWith('image/')) && (
+        <p className="composer__hint" role="status">
+          The selected model cannot analyze attached images. Choose a vision-capable model in Settings.
+        </p>
+      )}
+
       <form className="composer__form" onSubmit={handleSubmit}>
+        <input
+          ref={fileInputRef}
+          id="chat-file-upload"
+          className="visually-hidden"
+          type="file"
+          accept=".pdf,.docx,.txt,.md,.csv,.png,.jpg,.jpeg,.webp"
+          multiple
+          onChange={(event) => {
+            const selectedFiles = Array.from(event.target.files ?? []);
+            if (selectedFiles.length) onUploadFiles?.(selectedFiles);
+            event.target.value = '';
+          }}
+        />
+        <label className="visually-hidden" htmlFor="chat-file-upload">
+          Select files to attach
+        </label>
+        <button
+          type="button"
+          className="composer__attach"
+          aria-label="Attach files"
+          title="Attach files"
+          disabled={isPending || isUploading}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <Icon name="attach" size={18} />
+        </button>
         <label className="visually-hidden" htmlFor="chat-composer">
           Message
         </label>
@@ -148,7 +227,7 @@ export function Composer({
       </form>
 
       <p className="composer__hint">
-        Enter to send · Shift + Enter for a new line
+        {isUploading ? 'Uploading files…' : 'Attach PDF, DOCX, text, Markdown, CSV, PNG, JPEG, or WebP · Enter to send'}
       </p>
     </div>
   );

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import App from './App';
 import * as chatService from './services/chatService.js';
 import * as conversationService from './services/conversationService.js';
+import * as modelService from './services/modelService.js';
 import * as authHook from './hooks/useAuth.js';
 import { clearConversations } from './services/conversationStorage.js';
 import { removeKey } from './services/localStorage.js';
@@ -66,7 +67,26 @@ vi.mock('./services/conversationService.js', () => ({
   getConversation: vi.fn(),
   importLocalHistory: vi.fn().mockResolvedValue(null),
   listConversations: vi.fn().mockResolvedValue([]),
+  listConversationUploads: vi.fn().mockResolvedValue([]),
+  uploadConversationFile: vi.fn(async (_id, file) => ({
+    id: 'uploaded-file-id',
+    name: file.name,
+    contentType: file.type,
+    size: file.size,
+  })),
+  downloadConversationFile: vi.fn(),
+  deleteConversationFile: vi.fn(),
   renameConversation: vi.fn(),
+}));
+
+vi.mock('./services/modelService.js', () => ({
+  listAvailableModels: vi.fn().mockResolvedValue({
+    defaultModelId: 'local-offline',
+    models: [
+      { id: 'local-offline', label: 'Local offline', provider: 'local', supportsVision: false },
+      { id: 'openai-default', label: 'GPT (OpenAI)', provider: 'openai', supportsVision: true },
+    ],
+  }),
 }));
 
 function mockReply(content = 'A backend reply') {
@@ -109,6 +129,22 @@ beforeEach(() => {
   });
   vi.mocked(conversationService.importLocalHistory).mockResolvedValue(null);
   vi.mocked(conversationService.listConversations).mockResolvedValue([]);
+  vi.mocked(conversationService.listConversationUploads).mockResolvedValue([]);
+  vi.mocked(modelService.listAvailableModels).mockResolvedValue({
+    defaultModelId: 'local-offline',
+    models: [
+      { id: 'local-offline', label: 'Local offline', provider: 'local', supportsVision: false },
+      { id: 'openai-default', label: 'GPT (OpenAI)', provider: 'openai', supportsVision: true },
+    ],
+  });
+  vi.mocked(conversationService.uploadConversationFile).mockImplementation(
+    async (_id, file) => ({
+      id: 'uploaded-file-id',
+      name: file.name,
+      contentType: file.type,
+      size: file.size,
+    }),
+  );
   vi.mocked(conversationService.createConversation).mockResolvedValue({
     id: 'test-conversation',
     title: 'New chat',
@@ -174,6 +210,22 @@ describe('App', () => {
     expect(transcript().getByText('How are you?')).toBeInTheDocument();
   });
 
+  it('sends the selected safe model identifier with the chat request', async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }));
+    fireEvent.change(await screen.findByLabelText('Choose a model'), {
+      target: { value: 'openai-default' },
+    });
+    await sendMessage('Use GPT');
+
+    await waitFor(() => {
+      expect(chatService.streamAssistantReply).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'openai-default' }),
+      );
+    });
+    expect(chatService.streamAssistantReply.mock.calls[0][0].model).toBe('openai-default');
+  });
+
   it('persists the user message before requesting an assistant reply', async () => {
     render(<App />);
 
@@ -186,6 +238,36 @@ describe('App', () => {
       expect.objectContaining({ sender: 'user', message: 'Save this exchange' }),
     );
     expect(transcript().getAllByText('A backend reply')).toHaveLength(1);
+  });
+
+  it('creates a conversation and uploads a file from the composer', async () => {
+    render(<App />);
+    await screen.findByLabelText('Message');
+
+    const file = new File(['notes'], 'notes.txt', { type: 'text/plain' });
+    fireEvent.change(screen.getByLabelText('Select files to attach'), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(conversationService.uploadConversationFile).toHaveBeenCalledWith(
+        'test-conversation',
+        file,
+      );
+    });
+    expect(await screen.findByRole('button', { name: 'Download notes.txt' }))
+      .toBeInTheDocument();
+    expect(conversationService.createConversation).toHaveBeenCalledOnce();
+
+    await sendMessage('What is in these notes?');
+    await waitFor(() => {
+      expect(chatService.streamAssistantReply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversationId: 'test-conversation',
+          fileIds: ['uploaded-file-id'],
+        }),
+      );
+    });
   });
 
   it('clears the composer after sending', async () => {

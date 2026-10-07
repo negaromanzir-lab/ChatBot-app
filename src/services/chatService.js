@@ -66,12 +66,23 @@ export function createUserMessage(text, { id = createId(), createdAt = Date.now(
  *
  * @param {{ messages: Array<{sender: string, message: string}>, signal?: AbortSignal }} params
  */
-export async function requestAssistantReply({ messages, signal } = {}) {
+export async function requestAssistantReply({
+  messages,
+  signal,
+  model,
+  conversationId,
+  fileIds = [],
+} = {}) {
   const history = Array.isArray(messages) ? messages.slice(-MAX_HISTORY_MESSAGES) : [];
 
   const payload = await apiRequest('/chat', {
     method: 'POST',
-    body: { messages: toApiMessages(history) },
+    body: {
+      ...(model ? { model } : {}),
+      ...(conversationId ? { conversationId } : {}),
+      ...(fileIds.length ? { fileIds } : {}),
+      messages: toApiMessages(history),
+    },
     signal,
   });
 
@@ -91,12 +102,20 @@ export async function streamAssistantReply({
   messages,
   conversationId,
   signal,
+  model,
+  fileIds = [],
   onDelta = () => {},
 } = {}) {
   const history = Array.isArray(messages) ? messages.slice(-MAX_HISTORY_MESSAGES) : [];
   const response = await apiStream('/chat', {
     method: 'POST',
-    body: { messages: toApiMessages(history), stream: true },
+    body: {
+      ...(model ? { model } : {}),
+      ...(conversationId ? { conversationId } : {}),
+      ...(fileIds.length ? { fileIds } : {}),
+      messages: toApiMessages(history),
+      stream: true,
+    },
     signal,
   });
   const reader = response.body.getReader();

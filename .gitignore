@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+.private-uploads/
 
 # Local secrets — never commit. Commit .env.example instead (empty placeholders only).
 .env

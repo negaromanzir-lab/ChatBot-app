@@ -16,6 +16,7 @@ const FILLED = { fill: true };
 const ICONS = {
   plus: { paths: ['M12 5v14', 'M5 12h14'] },
   send: { paths: ['M12 19V5', 'M5 12l7-7 7 7'] },
+  attach: { paths: ['M21.4 11.1l-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8l9.2-9.2a3.7 3.7 0 0 1 5.2 5.2l-9.2 9.2a1.8 1.8 0 0 1-2.6-2.6l8.5-8.5'] },
   stop: { ...FILLED, paths: ['M6.5 7.5h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z'] },
   copy: {
     rects: [{ x: 9, y: 9, width: 12, height: 12, rx: 2 }],

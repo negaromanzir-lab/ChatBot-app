@@ -19,6 +19,10 @@ export function SettingsPanel({
   onClose,
   themePreference,
   onThemeChange,
+  models = [],
+  selectedModelId,
+  onModelChange,
+  modelError = null,
   displayName,
   onDisplayNameChange,
   onClearHistory,
@@ -74,6 +78,31 @@ export function SettingsPanel({
               </button>
             ))}
           </div>
+        </section>
+
+        <section className="settings__section">
+          <h3 className="settings__section-title">AI model</h3>
+          <label className="settings__label" htmlFor="settings-model">
+            Choose a model
+          </label>
+          <select
+            id="settings-model"
+            className="settings__input settings__select"
+            value={selectedModelId ?? ''}
+            onChange={(event) => onModelChange?.(event.target.value)}
+            disabled={!models.length}
+          >
+            {!models.length && <option value="">Loading available models…</option>}
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.label}
+              </option>
+            ))}
+          </select>
+          {modelError && <p className="settings__error" role="alert">{modelError}</p>}
+          <p className="settings__description">
+            Only models configured by the server are available.
+          </p>
         </section>
 
         <section className="settings__section">

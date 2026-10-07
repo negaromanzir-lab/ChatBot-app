@@ -42,9 +42,10 @@ async function getRequestHeaders(body, acceptsStream = false) {
       cause,
     });
   }
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
   return {
     ...(acceptsStream ? { accept: 'text/event-stream' } : {}),
-    ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+    ...(body === undefined || isFormData ? {} : { 'content-type': 'application/json' }),
     ...(token ? { authorization: `Bearer ${token}` } : {}),
   };
 }
@@ -77,7 +78,12 @@ export async function apiRequest(path, options = {}) {
       method,
       credentials: 'include',
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body:
+        body === undefined
+          ? undefined
+          : typeof FormData !== 'undefined' && body instanceof FormData
+            ? body
+            : JSON.stringify(body),
       signal: combinedSignal,
     });
   } catch (error) {
@@ -151,7 +157,12 @@ export async function apiStream(path, options = {}) {
       method,
       credentials: 'include',
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body:
+        body === undefined
+          ? undefined
+          : typeof FormData !== 'undefined' && body instanceof FormData
+            ? body
+            : JSON.stringify(body),
       signal: combinedSignal,
     });
   } catch (error) {
@@ -208,3 +219,47 @@ export async function apiStream(path, options = {}) {
 }
 
 export { API_BASE_URL };
+
+export async function apiDownload(path, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      credentials: 'include',
+      headers: await getRequestHeaders(),
+      signal: timeoutSignal,
+    });
+  } catch (error) {
+    if (error instanceof ApiClientError) throw error;
+    if (timeoutSignal.aborted) {
+      throw new ApiClientError('The server took too long to respond. Please try again.', {
+        code: 'TIMEOUT',
+      });
+    }
+    throw new ApiClientError(
+      'Could not reach the server. Check that the backend is running.',
+      { code: 'NETWORK_ERROR', cause: error },
+    );
+  }
+
+  if (!response.ok) {
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new ApiClientError(
+        `The server returned an unexpected response (HTTP ${response.status}).`,
+        { status: response.status, code: 'INVALID_RESPONSE' },
+      );
+    }
+    throw new ApiClientError(
+      payload?.error?.message ?? `Request failed (HTTP ${response.status}).`,
+      {
+        status: response.status,
+        code: payload?.error?.code ?? 'UNKNOWN',
+        details: payload?.error?.details,
+      },
+    );
+  }
+  return response.blob();
+}

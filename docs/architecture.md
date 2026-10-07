@@ -9,19 +9,19 @@
 | 2 | Separate UI from chat orchestration | Complete |
 | 3 | Backend/API foundation (Express, validation, CORS, rate limits, logging) | Complete |
 | 4 | Provider abstraction, timeout/error mapping, and SSE streaming | Complete |
-| 5 | PostgreSQL persistence and Clerk authentication | In progress |
-| 6 | File uploads | Not started |
-| 7 | Settings and model controls | Not started |
+| 5 | PostgreSQL persistence and Clerk authentication | Complete |
+| 6 | File uploads and document understanding | Complete |
+| 7 | Settings and model controls | In progress |
 | 8 | Production hardening | Not started |
 
-Uploads and durable user settings remain deliberately absent. Conversations are
-backed by PostgreSQL and scoped to authenticated accounts. Clerk integration is
-implemented, but the live database checkpoint is blocked because the configured
-PostgreSQL credentials are rejected by the server.
+Durable user settings remain deliberately absent. Conversations and upload
+metadata are backed by PostgreSQL and scoped to authenticated accounts. File
+bytes are stored on the private local filesystem behind a replaceable storage
+adapter.
 
 ## Current baseline
 
-The application as it stands after Phases 0–4:
+The application as it stands after Phase 6:
 
 - `src/main.jsx` mounts `App` inside React Strict Mode.
 - `src/App.jsx` is a composition root only: it calls `useChatConversation` and
@@ -33,12 +33,14 @@ The application as it stands after Phases 0–4:
   (`sender`/`message`) and the API contract (`role`/`content`).
 - `src/shared/api/httpClient.js` wraps `fetch` with a timeout and a single error
   shape.
-- `src/components/ChatInput.jsx` and `ChatMessages.jsx` are presentational.
-- `server/` provides the Express API described below. `supersimpledev` has been
-  removed from the project entirely.
-
-There is no authentication, persistence, or file storage yet, and the default
-provider is an offline deterministic stand-in rather than a real model.
+- `src/components/input/Composer.jsx` and the chat presentation components
+  report user actions while feature hooks and services manage application state.
+- `server/` provides the Express API, provider abstraction, Clerk authentication,
+  PostgreSQL persistence, and private conversation-file operations described
+  below. `supersimpledev` has been removed from the project entirely.
+- Conversation and upload operations derive ownership from the verified Clerk
+  identity. Documents are privately extracted and included in chat requests;
+  images are passed only to models with vision capability.
 
 ## Architecture decisions
 
@@ -60,16 +62,17 @@ provider is an offline deterministic stand-in rather than a real model.
 6. **Use PostgreSQL as the production database target.** Add migrations and
    repositories when persistence is implemented; this decision does not require
    introducing the database in Phase 0.
-7. **Store file bytes outside the relational database.** Keep ownership and
-   metadata in the database and private file contents in controlled object
-   storage. The storage provider remains a later deployment decision.
+7. **Store file bytes outside the relational database.** Keep ownership,
+   metadata, and extracted text in PostgreSQL and file contents in private local
+   storage for this phase. The storage adapter allows migration to private
+   object storage; extracted text is separate from future chunk/vector indexes.
 8. **Preserve a working checkpoint at every phase.** Keep local chatbot mode
    available while migrating, then make any remaining local mode explicit.
    Do not silently mask backend/provider failures with fake successful replies.
-9. **Defer product/deployment choices until required.** Authentication vendor,
-   AI vendor/model, object-storage provider, streaming transport, hosting, and
-   retention policy require a concrete deployment/product decision and are not
-   selected or implemented here.
+9. **Keep deployment choices replaceable.** Clerk is the current authentication
+   provider; the AI provider contract allows provider adapters to change. The
+   local file storage adapter can later be replaced by private object storage.
+   Hosting and retention policy remain deployment decisions.
 
 ## Target repository layout
 
@@ -164,8 +167,10 @@ server/
 6. **Phase 5 — Persistence and authentication:** add PostgreSQL migrations and
    repositories, authentication, per-resource ownership checks, conversation
    history, and reload-resilient messages.
-7. **Phase 6 — File uploads:** add server-side type/size validation, private
-   object storage, ownership-aware download access, and composer upload UX.
+7. **Phase 6 — File uploads and document understanding:** add server-side
+   type/size validation, private local storage behind an adapter,
+   ownership-aware operations, document text extraction, vision-capable image
+   input, and composer upload UX.
 8. **Phase 7 — Settings and model controls:** persist user preferences and
    expose only server-validated supported model choices.
 9. **Phase 8 — Production hardening:** add integration coverage, rate limits
@@ -176,6 +181,68 @@ For every phase, run the relevant tests plus `npm run build` and `npm run lint`.
 Backend phases should add corresponding server tests and health/integration
 checks. A phase is complete only when its checkpoint is runnable and failures
 are surfaced rather than silently replaced by success-shaped defaults.
+
+## Phase 6 — Authenticated conversation files
+
+`POST`, `GET`, and `DELETE /api/conversations/:id/uploads` (with the upload ID
+suffix on download/delete routes) are mounted behind the existing Clerk
+authentication and conversation-ownership checks. The PostgreSQL migration
+stores file metadata with a cascading foreign key to its conversation and an
+index for listing a conversation's files.
+
+The upload service allowlists PDF, DOCX, UTF-8 text, Markdown, CSV, PNG, JPEG,
+and WebP; enforces the configured per-file limit; checks content signatures or
+text encoding; and generates opaque UUID storage keys rather than using user
+input as a path. `localFileStorage` is injected behind a small storage boundary;
+its private files are outside static assets and ignored by Git. Downloads are
+authorized and sent as attachments. `/api/files` accepts the conversation ID
+as multipart metadata; the existing nested upload paths remain available.
+
+PDF.js extracts PDF text, Mammoth extracts DOCX text, and UTF-8 text formats are
+stored as extracted text on the metadata row. The authenticated chat service
+resolves attachment IDs through their owner conversation before reading file
+contents. Extracted text is included as explicitly untrusted document context.
+Image bytes are sent only to a selected model whose registry entry advertises
+vision; OpenAI, Gemini, and Claude adapters map normalized image content into
+their vendor-specific request formats. The composer warns if a selected model
+cannot analyze attached images.
+
+Uploads are parsed as data only and are never executed. Extracted text is
+separate from provider formatting, allowing future chunking, embeddings, and
+RAG/vector retrieval without changing the chat contract.
+
+### Phase 6 verification
+
+- `npm test` — all frontend and backend tests pass, including upload route,
+  ownership repository, validation, local storage, conversation cleanup, and
+  composer attachment interaction coverage.
+- `npm run lint` — passes.
+- `npm run build` — passes. Vite reports the existing large JavaScript chunk
+  advisory; it does not fail the build.
+- `npm run db:migrate` — reports that migrations are up to date.
+- Upload metadata includes extracted document text through migration 004.
+
+## Phase 7 — Multi-provider model selection (in progress)
+
+The server owns the model registry in `server/src/services/ai/modelRegistry.js`.
+It publishes only stable model IDs, labels, and provider names from authenticated
+`GET /api/models`; vendor model names and API keys stay in server configuration.
+The chat request may include a safe model ID. Unknown or disabled IDs return a
+common `AI_MODEL_UNAVAILABLE` error rather than silently switching providers.
+
+OpenAI, Gemini, Claude, OpenAI-compatible, and offline adapters implement the
+same `generateResponse()` / `streamResponse()` contract. Chat orchestration
+resolves each selected ID and caches the resulting adapter without exposing
+provider specifics to controllers or React. Model availability is controlled
+by server-only credentials and model settings. User selection is kept in local
+preferences and supplied to both one-shot and streaming chat requests. Registry
+models expose a safe `supportsVision` capability for the attachment UI and
+server-side request validation.
+
+The settings model selector is configuration-driven: models added to the
+server registry do not require provider-specific React branches. Gemini and
+Claude adapters normalize their one-shot, streaming, image inputs, and provider
+failures to the existing assistant message and `ApiError` contracts.
 
 ## Phase 0 validation
 
@@ -318,7 +385,7 @@ and replace it with the final message rather than adding a duplicate.
 - Real provider path against a mock upstream: conversation forwarded intact,
   bearer token attached server-side.
 
-### Phase 5 — PostgreSQL persistence and Clerk authentication (implementation in progress)
+### Phase 5 — PostgreSQL persistence and Clerk authentication (complete)
 
 - PostgreSQL migrations create users, conversations, and messages with
   ownership foreign keys, cascade deletion, constraints, and query indexes.
@@ -336,17 +403,14 @@ and replace it with the final message rather than adding a duplicate.
   is persisted once after streaming. Existing local history is imported after
   sign-in and retained until import completion.
 - Automated auth, repository, service, route, and UI tests cover Clerk identity
-  sync, verified-email linking, and ownership boundaries. A live PostgreSQL
-  migration and account-linking round trip is still required before Phase 5 is
-  complete.
+  sync, verified-email linking, and ownership boundaries. The live migration
+  command reports the schema up to date, the API health endpoint returns 200,
+  and anonymous access to protected APIs is covered by route tests.
 
 ### Known limitations
 
 - PostgreSQL, a valid `DATABASE_URL`, and Clerk keys are required to start the API.
   Use the development Compose database locally and configure Clerk keys from its dashboard.
-- `npm run db:migrate` currently fails against the configured local PostgreSQL
-  endpoint with password authentication failure. Correct the local database
-  credentials before applying migrations 001 and 002.
 - Rate limiting is still per IP; authenticated per-account quotas remain for
   production hardening.
 - The default provider is offline and says so. Direct OpenAI replies require

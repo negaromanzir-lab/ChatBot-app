@@ -5,6 +5,7 @@ import ApiError from '../../utils/ApiError.js';
 import asyncHandler from '../../utils/asyncHandler.js';
 import config from '../../config/env.js';
 import { createConversationController } from './conversation.controller.js';
+import { createUploadRouter } from '../uploads/upload.routes.js';
 
 const idSchema = z.string().uuid();
 const createSchema = z.object({
@@ -34,11 +35,17 @@ function validateId(req, _res, next) {
 export function createConversationsRouter({
   conversationController,
   conversationService,
+  uploadController,
+  uploadService,
 } = {}) {
   const router = Router();
   const controller =
     conversationController ?? createConversationController({ conversationService });
 
+  router.use(
+    '/:id/uploads',
+    createUploadRouter({ uploadController, uploadService }),
+  );
   router.post('/', validate({ body: createSchema }), asyncHandler(controller.create));
   router.get('/', asyncHandler(controller.list));
   router.get('/:id', validateId, asyncHandler(controller.get));

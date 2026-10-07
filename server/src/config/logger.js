@@ -13,6 +13,7 @@ const redactPaths = [
   'req.headers.authorization',
   'req.headers.cookie',
   'req.headers["x-api-key"]',
+  'req.headers["x-goog-api-key"]',
   'req.body.messages',
   'res.headers["set-cookie"]',
   'config.ai.apiKey',

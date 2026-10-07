@@ -11,6 +11,8 @@ import config from '../config/env.js';
  */
 import createConversationsRouter from '../modules/conversations/conversation.routes.js';
 import { createRequireAuth } from '../middleware/requireAuth.js';
+import { listAvailableModels } from '../services/ai/modelRegistry.js';
+import createFileRouter from '../modules/uploads/file.routes.js';
 
 export function createApiRouter({
   chatController,
@@ -19,6 +21,8 @@ export function createApiRouter({
   authService,
   conversationController,
   conversationService,
+  uploadController,
+  uploadService,
   clerkClient,
   authResolver,
   requireAuthMiddleware,
@@ -28,6 +32,11 @@ export function createApiRouter({
   const authenticate =
     requireAuthMiddleware ??
     createRequireAuth({ authService, clerkClient, authResolver });
+
+  router.get('/models', authenticate, (_req, res) => {
+    res.status(200).json(listAvailableModels());
+  });
+  router.use('/files', authenticate, createFileRouter({ uploadController, uploadService }));
 
   router.get('/health', (_req, res) => {
     res.status(200).json({
@@ -41,7 +50,12 @@ export function createApiRouter({
   router.use(
     '/conversations',
     authenticate,
-    createConversationsRouter({ conversationController, conversationService }),
+    createConversationsRouter({
+      conversationController,
+      conversationService,
+      uploadController,
+      uploadService,
+    }),
   );
   router.use(
     '/',

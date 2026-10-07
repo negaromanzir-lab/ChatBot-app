@@ -1,4 +1,4 @@
-import { apiRequest } from './apiClient.js';
+import { apiDownload, apiRequest } from './apiClient.js';
 import {
   clearConversations,
   loadConversations,
@@ -52,6 +52,32 @@ export async function renameConversation(id, title) {
 
 export async function createConversationMessage(id, message) {
   return appendConversationMessage(id, message);
+}
+
+export async function listConversationUploads(id) {
+  const payload = await apiRequest(`/conversations/${encodeURIComponent(id)}/uploads`);
+  return payload.uploads;
+}
+
+export async function uploadConversationFile(id, file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('conversationId', id);
+  const payload = await apiRequest('/files', { method: 'POST', body: formData });
+  return payload.upload;
+}
+
+export async function downloadConversationFile(conversationId, uploadId) {
+  return apiDownload(
+    `/conversations/${encodeURIComponent(conversationId)}/uploads/${encodeURIComponent(uploadId)}`,
+  );
+}
+
+export function deleteConversationFile(conversationId, uploadId) {
+  return apiRequest(
+    `/conversations/${encodeURIComponent(conversationId)}/uploads/${encodeURIComponent(uploadId)}`,
+    { method: 'DELETE' },
+  );
 }
 
 export function deleteConversation(id) {
