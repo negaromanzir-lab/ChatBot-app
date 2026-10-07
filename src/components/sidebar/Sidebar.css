@@ -131,6 +131,18 @@
   transition: opacity var(--transition-fast);
 }
 
+.sidebar__row-rename {
+  position: absolute;
+  right: 32px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.sidebar__row:hover .sidebar__row-rename,
+.sidebar__row:focus-within .sidebar__row-rename {
+  opacity: 1;
+}
+
 .sidebar__row:hover .sidebar__row-delete,
 .sidebar__row:focus-within .sidebar__row-delete {
   opacity: 1;
@@ -146,6 +158,21 @@
   gap: 8px;
   padding: 10px 12px;
   border-top: 1px solid var(--color-border);
+}
+
+.sidebar__sign-out {
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sidebar__sign-out:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
 }
 
 .sidebar__profile {

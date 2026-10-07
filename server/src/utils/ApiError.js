@@ -26,6 +26,14 @@ export class ApiError extends Error {
     return new ApiError(401, code, message);
   }
 
+  static forbidden(code, message) {
+    return new ApiError(403, code, message);
+  }
+
+  static notFound(code, message) {
+    return new ApiError(404, code, message);
+  }
+
   static payloadTooLarge(code, message) {
     return new ApiError(413, code, message);
   }

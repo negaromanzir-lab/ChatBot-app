@@ -95,7 +95,7 @@ export function SettingsPanel({
         <section className="settings__section">
           <h3 className="settings__section-title">History</h3>
           <p className="settings__description">
-            Conversations are stored in this browser only.
+            Conversations are saved to your account and available when you sign in.
           </p>
           <Button variant="danger" onClick={() => onClearHistory?.()}>
             <Icon name="trash" size={16} />

@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { appendConversationMessage } from './conversationService.js';
 import {
   requestAssistantReply,
   streamAssistantReply,
   toApiMessages,
   toChatMessage,
 } from './chatService.js';
+
+vi.mock('./conversationService.js', () => ({
+  appendConversationMessage: vi.fn(),
+}));
 
 /**
  * Covers the UI <-> API contract translation, which is the part most likely to
@@ -14,6 +19,7 @@ import {
 describe('chatService', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.mocked(appendConversationMessage).mockReset();
   });
 
   function stubFetch(response, { ok = true, status = 200 } = {}) {
@@ -158,6 +164,39 @@ describe('chatService', () => {
         status: 'complete',
       });
       expect(reply.id).toBe(onDelta.mock.calls[0][1].id);
+    });
+
+    it('persists the completed assistant reply once for a saved conversation', async () => {
+      stubFetch(
+        sse(
+          { type: 'delta', content: 'Saved reply' },
+          { type: 'done', message: { role: 'assistant', content: 'Saved reply' } },
+        ),
+      );
+      vi.mocked(appendConversationMessage).mockResolvedValue({
+        message: {
+          id: 'stored-assistant-message',
+          sender: 'robot',
+          message: 'Saved reply',
+          createdAt: 123,
+        },
+      });
+
+      const reply = await streamAssistantReply({
+        conversationId: 'conversation-1',
+        messages: [{ sender: 'user', message: 'Hello' }],
+      });
+
+      expect(appendConversationMessage).toHaveBeenCalledTimes(1);
+      expect(appendConversationMessage).toHaveBeenCalledWith(
+        'conversation-1',
+        expect.objectContaining({ sender: 'robot', message: 'Saved reply' }),
+      );
+      expect(reply).toMatchObject({
+        id: 'stored-assistant-message',
+        sender: 'robot',
+        message: 'Saved reply',
+      });
     });
 
     it('surfaces streamed provider errors', async () => {

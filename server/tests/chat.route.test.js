@@ -23,6 +23,7 @@ let baseUrl;
 let provider;
 
 const passThroughLimiter = (_req, _res, next) => next();
+const passThroughAuth = (_req, _res, next) => next();
 
 /** Records the messages it was called with and returns a canned reply. */
 function createFakeProvider(content = 'Hello! How can I help?', name = 'fake') {
@@ -35,7 +36,11 @@ function createFakeProvider(content = 'Hello! How can I help?', name = 'fake') {
   };
 }
 
-async function startServer({ provider: override, rateLimiter } = {}) {
+async function startServer({
+  provider: override,
+  rateLimiter,
+  enforceChatAuth = false,
+} = {}) {
   if (server) {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -47,6 +52,7 @@ async function startServer({ provider: override, rateLimiter } = {}) {
     // Rate limiting has its own tests; disabling it elsewhere keeps assertions
     // independent of the shared request counter.
     rateLimiter: rateLimiter ?? passThroughLimiter,
+    ...(enforceChatAuth ? {} : { chatAuthMiddleware: passThroughAuth }),
   });
 
   server = app.listen(0);
@@ -84,6 +90,18 @@ afterAll(async () => {
 });
 
 describe('POST /api/chat', () => {
+  it('requires an authenticated session by default', async () => {
+    await startServer({ enforceChatAuth: true });
+
+    const response = await postChat(validBody);
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'AUTH_REQUIRED' },
+    });
+    expect(provider.generateReply).not.toHaveBeenCalled();
+  });
+
   describe('happy path', () => {
     it('returns the assistant reply in the documented shape', async () => {
       const response = await postChat(validBody);

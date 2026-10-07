@@ -32,4 +32,23 @@ export function createChatRateLimiter(overrides = {}) {
   });
 }
 
+export function createAuthRateLimiter(overrides = {}) {
+  return rateLimit({
+    windowMs: overrides.windowMs ?? config.rateLimit.windowMs,
+    limit: overrides.limit ?? 10,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => ipKeyGenerator(req.ip),
+    skip: (req) => req.method === 'OPTIONS',
+    handler: (_req, _res, next) => {
+      next(
+        ApiError.tooManyRequests(
+          'AUTH_RATE_LIMIT_EXCEEDED',
+          'Too many authentication attempts. Please try again later.',
+        ),
+      );
+    },
+  });
+}
+
 export default createChatRateLimiter;

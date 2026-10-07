@@ -12,6 +12,8 @@ const schema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   CORS_ORIGINS: z.string().default('http://localhost:5173'),
+  DATABASE_URL: z.string().min(1).optional(),
+  SESSION_SECRET: z.string().min(32).optional(),
   TRUST_PROXY: booleanFromString,
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
@@ -36,6 +38,15 @@ if (!parsed.success) {
 }
 
 const raw = parsed.data;
+if (raw.NODE_ENV !== 'test' && !raw.DATABASE_URL) {
+  process.stderr.write('DATABASE_URL is required. Start PostgreSQL and configure it in .env.\n');
+  process.exit(1);
+}
+
+if (raw.NODE_ENV !== 'test' && (!raw.SESSION_SECRET || raw.SESSION_SECRET.length < 32)) {
+  process.stderr.write('SESSION_SECRET must be set to a random value of at least 32 characters.\n');
+  process.exit(1);
+}
 if (raw.NODE_ENV === 'production') {
   if (
     ['openai', 'openai-direct', 'openai-compatible'].includes(raw.AI_PROVIDER) &&
@@ -69,6 +80,8 @@ export const config = Object.freeze({
   port: raw.PORT,
   logLevel: raw.NODE_ENV === 'test' ? 'silent' : raw.LOG_LEVEL,
   corsOrigins: raw.CORS_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean),
+  databaseUrl: raw.DATABASE_URL,
+  sessionSecret: raw.SESSION_SECRET,
   trustProxy: raw.TRUST_PROXY,
   rateLimit: { windowMs: raw.RATE_LIMIT_WINDOW_MS, max: raw.RATE_LIMIT_MAX },
   bodyLimit: raw.BODY_LIMIT,

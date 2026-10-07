@@ -12,9 +12,14 @@ never reach the frontend.
 
 ```bash
 npm install
-cp .env.example .env   # optional: the app runs with zero configuration
+cp .env.example .env
+docker compose up -d db
+npm run db:migrate
 npm run dev
 ```
+
+Generate a fresh `SESSION_SECRET` in `.env` using the command documented there before
+starting the server. PostgreSQL is required for account and conversation storage.
 
 `npm run dev` starts both processes together:
 
@@ -24,6 +29,30 @@ npm run dev
 | Express API | http://localhost:3000 | Health check at http://localhost:3000/api/health |
 
 Run them individually with `npm run dev:client` and `npm run dev:server`.
+
+### Accounts and saved conversations
+
+Create an account or sign in with an email and a password of at least 12 characters.
+Passwords are stored as bcrypt hashes; the server issues an HTTP-only, SameSite session
+cookie stored in PostgreSQL. Conversation APIs require authentication and scope all reads
+and writes by the signed-in user. `POST /api/chat` also requires an authenticated
+session so anonymous callers cannot use the configured provider key. Existing local
+browser history is imported once after sign-in and cleared only after a successful import.
+
+The migration creates `users`, `sessions`, `conversations`, and `messages`, with cascade
+foreign keys, constraints, and indexes for conversation history and ordered message lookup.
+AI provider keys remain server environment variables and are never stored in the database.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/conversations` | Create a conversation |
+| `GET` | `/api/conversations` | List the signed-in user's conversations |
+| `GET` | `/api/conversations/:id` | Open a conversation and its messages |
+| `PATCH` | `/api/conversations/:id` | Rename a conversation |
+| `DELETE` | `/api/conversations/:id` | Delete a conversation and its messages |
+| `POST` | `/api/conversations/:id/messages` | Append a user or assistant message |
+
+The first user message generates a useful title; the sidebar also supports renaming.
 
 ### Enabling a real AI provider
 
@@ -50,6 +79,7 @@ use the same `/api/chat` contract when the provider changes.
 | `npm run dev` | Start the API and the Vite dev server together |
 | `npm run dev:client` | Start only the Vite dev server |
 | `npm run dev:server` | Start only the Express API (with `--watch`) |
+| `npm run db:migrate` | Apply pending PostgreSQL schema migrations |
 | `npm run build` | Build the production frontend bundle into `dist/` |
 | `npm run preview` | Serve the production build locally |
 | `npm run lint` | Run ESLint over the frontend and the server |
@@ -198,9 +228,8 @@ Working: full round trip through the API, request validation, rate limiting, str
 logging, CORS, graceful shutdown, and a provider abstraction with real timeout and error
 mapping.
 
-Not implemented yet: streaming responses, message persistence across reloads, authentication
-(so rate limiting is currently per-IP), file uploads, and settings. The offline `local`
-provider is a development stand-in, not a model.
+Not implemented yet: file uploads and durable user settings. The offline `local` provider
+is a development stand-in, not a model.
 
 The phased migration plan and its rationale are in
 [docs/architecture.md](./docs/architecture.md).

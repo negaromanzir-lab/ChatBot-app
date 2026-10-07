@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import App from './App';
 import * as chatService from './services/chatService.js';
+import * as authService from './services/authService.js';
+import * as conversationService from './services/conversationService.js';
+import * as authHook from './hooks/useAuth.js';
 import { clearConversations } from './services/conversationStorage.js';
 import { removeKey } from './services/localStorage.js';
 import { THEME_STORAGE_KEY } from './hooks/useTheme.js';
@@ -22,6 +25,53 @@ import { THEME_STORAGE_KEY } from './hooks/useTheme.js';
 vi.mock('./services/chatService.js', async (importOriginal) => ({
   ...(await importOriginal()),
   streamAssistantReply: vi.fn(),
+}));
+
+vi.mock('./services/authService.js', () => ({
+  getCurrentUser: vi.fn().mockResolvedValue({
+    id: 'test-user',
+    email: 'test@example.com',
+  }),
+  signIn: vi.fn(),
+  signUp: vi.fn(),
+  signOut: vi.fn(),
+}));
+
+vi.mock('./hooks/useAuth.js', () => ({
+  useAuth: vi.fn(),
+}));
+
+vi.mock('./services/conversationService.js', () => ({
+  createConversationMessage: vi.fn(async (id, message) => ({
+    conversation: { id, title: 'New chat', createdAt: Date.now(), updatedAt: Date.now() },
+    message: {
+      id: `persisted-${message.sender}-${Date.now()}`,
+      sender: message.sender,
+      message: message.message,
+      createdAt: Date.now(),
+    },
+  })),
+  appendConversationMessage: vi.fn(async (id, message) => ({
+    conversation: { id, title: 'New chat', createdAt: Date.now(), updatedAt: Date.now() },
+    message: {
+      id: `persisted-${message.sender}-${Date.now()}`,
+      sender: message.sender,
+      message: message.message,
+      createdAt: Date.now(),
+    },
+  })),
+  createConversation: vi.fn(async () => ({
+    id: 'test-conversation',
+    title: 'New chat',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    messages: [],
+  })),
+  deleteConversation: vi.fn(),
+  getConversation: vi.fn(),
+  importLocalHistory: vi.fn().mockResolvedValue(null),
+  listConversations: vi.fn().mockResolvedValue([]),
+  renameConversation: vi.fn(),
 }));
 
 function mockReply(content = 'A backend reply') {
@@ -47,7 +97,7 @@ function transcript() {
 }
 
 async function sendMessage(text) {
-  fireEvent.change(composer(), { target: { value: text } });
+  fireEvent.change(await screen.findByLabelText('Message'), { target: { value: text } });
   fireEvent.click(screen.getByRole('button', { name: /send/i }));
 }
 
@@ -58,15 +108,47 @@ beforeEach(() => {
   clearConversations();
   removeKey(THEME_STORAGE_KEY);
   removeKey('chatbot.preferences.v1');
+  vi.mocked(authService.getCurrentUser).mockResolvedValue({
+    id: 'test-user',
+    email: 'test@example.com',
+  });
+  vi.mocked(authHook.useAuth).mockReturnValue({
+    user: { id: 'test-user', email: 'test@example.com' },
+    isLoading: false,
+    error: null,
+    signIn: vi.fn(),
+    signUp: vi.fn(),
+    signOut: vi.fn(),
+  });
+  vi.mocked(conversationService.importLocalHistory).mockResolvedValue(null);
+  vi.mocked(conversationService.listConversations).mockResolvedValue([]);
+  vi.mocked(conversationService.createConversation).mockResolvedValue({
+    id: 'test-conversation',
+    title: 'New chat',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    messages: [],
+  });
+  vi.mocked(conversationService.createConversationMessage).mockImplementation(
+    async (id, message) => ({
+      conversation: { id, title: 'New chat', createdAt: Date.now(), updatedAt: Date.now() },
+      message: {
+        id: `persisted-${message.sender}-${Date.now()}`,
+        sender: message.sender,
+        message: message.message,
+        createdAt: Date.now(),
+      },
+    }),
+  );
   mockReply();
 });
 
 describe('App', () => {
-  it('shows the welcome screen when there is no conversation', () => {
+  it('shows the welcome screen when there is no conversation', async () => {
     render(<App />);
 
     expect(
-      screen.getByRole('heading', { name: /how can i help you today/i }),
+      await screen.findByRole('heading', { name: /how can i help you today/i }),
     ).toBeInTheDocument();
     expect(screen.queryByRole('log')).not.toBeInTheDocument();
   });
@@ -84,13 +166,27 @@ describe('App', () => {
     render(<App />);
 
     await sendMessage('How are you?');
+    expect(await screen.findByText('A backend reply')).toBeInTheDocument();
 
     expect(chatService.streamAssistantReply).toHaveBeenCalledTimes(1);
     const { messages } = vi.mocked(chatService.streamAssistantReply).mock.calls[0][0];
     expect(messages.map((message) => message.message)).toEqual(['How are you?']);
 
-    expect(await screen.findByText('A backend reply')).toBeInTheDocument();
     expect(transcript().getByText('How are you?')).toBeInTheDocument();
+  });
+
+  it('persists the user message before requesting an assistant reply', async () => {
+    render(<App />);
+
+    await sendMessage('Save this exchange');
+    expect(await screen.findByText('A backend reply')).toBeInTheDocument();
+
+    expect(conversationService.createConversationMessage).toHaveBeenCalledTimes(1);
+    expect(conversationService.createConversationMessage).toHaveBeenCalledWith(
+      'test-conversation',
+      expect.objectContaining({ sender: 'user', message: 'Save this exchange' }),
+    );
+    expect(transcript().getAllByText('A backend reply')).toHaveLength(1);
   });
 
   it('clears the composer after sending', async () => {
@@ -119,29 +215,33 @@ describe('App', () => {
     expect(screen.queryByText('A backend reply')).not.toBeInTheDocument();
   });
 
-  it('ignores an empty submission', () => {
+  it('ignores an empty submission', async () => {
     render(<App />);
 
-    expect(screen.getByRole('button', { name: /send/i })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: /send/i })).toBeDisabled();
 
-    fireEvent.change(composer(), { target: { value: '   ' } });
+    fireEvent.change(await screen.findByLabelText('Message'), {
+      target: { value: '   ' },
+    });
     expect(screen.getByRole('button', { name: /send/i })).toBeDisabled();
   });
 
   it('submits on Enter', async () => {
     render(<App />);
 
-    fireEvent.change(composer(), { target: { value: 'Sent with Enter' } });
+    fireEvent.change(await screen.findByLabelText('Message'), {
+      target: { value: 'Sent with Enter' },
+    });
     fireEvent.keyDown(composer(), { key: 'Enter' });
 
     expect(await screen.findByText('A backend reply')).toBeInTheDocument();
     expect(chatService.streamAssistantReply).toHaveBeenCalledTimes(1);
   });
 
-  it('inserts a newline on Shift+Enter instead of sending', () => {
+  it('inserts a newline on Shift+Enter instead of sending', async () => {
     render(<App />);
 
-    const textarea = composer();
+    const textarea = await screen.findByLabelText('Message');
     fireEvent.change(textarea, { target: { value: 'line one' } });
 
     const notPrevented = fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
@@ -177,7 +277,7 @@ describe('App', () => {
         screen.queryByRole('button', { name: /stop generating/i }),
       ).not.toBeInTheDocument();
     });
-    expect(composer()).toBeEnabled();
+    expect(await screen.findByLabelText('Message')).toBeEnabled();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(transcript().getByText('Long question')).toBeInTheDocument();
   });

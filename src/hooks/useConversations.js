@@ -1,130 +1,175 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  loadConversations,
-  saveConversations,
-  clearConversations,
-} from '../services/conversationStorage.js';
 import { deriveConversationTitle } from '../utils/text.js';
-import { createId } from '../utils/id.js';
+import {
+  createConversation as createConversationRequest,
+  deleteConversation as deleteConversationRequest,
+  getConversation,
+  importLocalHistory,
+  listConversations,
+  renameConversation as renameConversationRequest,
+} from '../services/conversationService.js';
 
-/**
- * Owns the conversation list, which one is active, and persistence.
- *
- * Design notes:
- *
- * - Both the list and the active id live in a single state object, because they
- *   are persisted together and must not be able to disagree.
- * - There is deliberately no "empty conversation" record. `newChat` clears the
- *   selection instead of creating a blank row, so the history can never
- *   accumulate abandoned empty entries.
- * - `setActiveMessages` creates the conversation lazily on first write. That is
- *   what lets the composer treat "no conversation yet" and "conversation with
- *   no messages" as the same state, which is what the user experiences.
- */
-export function useConversations() {
-  const [state, setState] = useState(loadConversations);
+export function useConversations(user) {
+  const [state, setState] = useState({ conversations: [], activeId: null });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // `loadConversations` already caps what it returns, so persisting on every
-  // state change is safe and keeps the write out of the hot typing path.
   useEffect(() => {
-    saveConversations(state);
-  }, [state]);
+    let active = true;
+    if (!user?.id) {
+      setIsLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+    setIsLoading(true);
+    setError(null);
+
+    async function load() {
+      try {
+        const importedActiveId = await importLocalHistory(user.id);
+        let conversations = await listConversations();
+        if (importedActiveId) {
+          const activeConversation = await getConversation(importedActiveId);
+          conversations = conversations.map((conversation) =>
+            conversation.id === importedActiveId ? activeConversation : conversation,
+          );
+        }
+        if (!active) return;
+        setState({
+          conversations,
+          activeId:
+            importedActiveId && conversations.some(({ id }) => id === importedActiveId)
+              ? importedActiveId
+              : null,
+        });
+      } catch (caught) {
+        if (active) {
+          setError(caught.message || 'Could not load saved conversations.');
+        }
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
 
   const activeConversation = useMemo(
-    () => state.conversations.find((conversation) => conversation.id === state.activeId) ?? null,
+    () => state.conversations.find(({ id }) => id === state.activeId) ?? null,
     [state.conversations, state.activeId],
   );
 
-  const selectConversation = useCallback((id) => {
-    setState((current) =>
-      current.activeId === id ? current : { ...current, activeId: id },
-    );
+  const selectConversation = useCallback(async (id) => {
+    setError(null);
+    try {
+      const conversation = await getConversation(id);
+      setState((current) => ({
+        conversations: current.conversations.map((item) =>
+          item.id === id ? conversation : item,
+        ),
+        activeId: id,
+      }));
+    } catch (caught) {
+      setError(caught.message || 'Could not open this conversation.');
+    }
   }, []);
 
-  /** Starts an empty chat. Any messages already stored are left untouched. */
   const newChat = useCallback(() => {
-    setState((current) =>
-      current.activeId === null ? current : { ...current, activeId: null },
-    );
+    setState((current) => ({ ...current, activeId: null }));
   }, []);
 
-  const deleteConversation = useCallback((id) => {
-    setState((current) => {
-      const remaining = current.conversations.filter((conversation) => conversation.id !== id);
-      if (remaining.length === current.conversations.length) return current;
-
-      return {
-        conversations: remaining,
-        // Fall back to the most recently updated remaining conversation so the
-        // user lands somewhere instead of on an empty screen.
-        activeId:
-          current.activeId === id
-            ? (remaining[0]?.id ?? null)
-            : current.activeId,
-      };
-    });
+  const createConversation = useCallback(async () => {
+    const conversation = await createConversationRequest();
+    setState((current) => ({
+      conversations: [conversation, ...current.conversations],
+      activeId: conversation.id,
+    }));
+    return conversation;
   }, []);
 
-  const renameConversation = useCallback((id, title) => {
+  const deleteConversation = useCallback(async (id) => {
+    setError(null);
+    try {
+      await deleteConversationRequest(id);
+      setState((current) => {
+        const remaining = current.conversations.filter(({ id: itemId }) => itemId !== id);
+        return {
+          conversations: remaining,
+          activeId:
+            current.activeId === id ? (remaining[0]?.id ?? null) : current.activeId,
+        };
+      });
+      const current = state;
+      const fallbackId =
+        current.activeId === id
+          ? current.conversations.find(({ id: itemId }) => itemId !== id)?.id ?? null
+          : null;
+      if (fallbackId) {
+        const fallback = await getConversation(fallbackId);
+        setState((currentState) => ({
+          ...currentState,
+          conversations: currentState.conversations.map((item) =>
+            item.id === fallbackId ? fallback : item,
+          ),
+        }));
+      }
+    } catch (caught) {
+      setError(caught.message || 'Could not delete this conversation.');
+    }
+  }, [state]);
+
+  const renameConversation = useCallback(async (id, title) => {
     const trimmed = title.trim();
     if (!trimmed) return;
-
-    setState((current) => ({
-      ...current,
-      conversations: current.conversations.map((conversation) =>
-        conversation.id === id ? { ...conversation, title: trimmed } : conversation,
-      ),
-    }));
+    setError(null);
+    try {
+      const conversation = await renameConversationRequest(id, trimmed);
+      setState((current) => ({
+        ...current,
+        conversations: current.conversations.map((item) =>
+          item.id === id ? { ...item, ...conversation } : item,
+        ),
+      }));
+    } catch (caught) {
+      setError(caught.message || 'Could not rename this conversation.');
+    }
   }, []);
 
-  const removeAllConversations = useCallback(() => {
-    clearConversations();
-    setState({ conversations: [], activeId: null });
-  }, []);
+  const removeAllConversations = useCallback(async () => {
+    setError(null);
+    try {
+      await Promise.all(
+        state.conversations.map(({ id }) => deleteConversationRequest(id)),
+      );
+      setState({ conversations: [], activeId: null });
+    } catch (caught) {
+      setError(caught.message || 'Could not delete all conversations.');
+    }
+  }, [state.conversations]);
 
-  /**
-   * Updates the active conversation's messages, creating it if there is none.
-   * Accepts an updater function so callers can append without stale state.
-   */
-  const setActiveMessages = useCallback((update) => {
+  const setActiveMessages = useCallback((update, targetId) => {
     setState((current) => {
+      const conversationId = targetId ?? current.activeId;
+      if (!conversationId || current.activeId !== conversationId) return current;
       const now = Date.now();
-
-      if (current.activeId === null) {
-        const messages = typeof update === 'function' ? update([]) : update;
-        const id = createId();
-
-        return {
-          activeId: id,
-          conversations: [
-            {
-              id,
-              // Naming from the first user message means the sidebar is never
-              // full of "New chat" rows once someone has actually said
-              // something.
-              title: deriveConversationTitle(messages),
-              messages,
-              createdAt: now,
-              updatedAt: now,
-            },
-          ],
-        };
-      }
-
       return {
         ...current,
         conversations: current.conversations.map((conversation) => {
-          if (conversation.id !== current.activeId) return conversation;
-
+          if (conversation.id !== conversationId) return conversation;
           const messages =
-            typeof update === 'function'
-              ? update(conversation.messages)
-              : update;
-
+            typeof update === 'function' ? update(conversation.messages) : update;
+          const firstUserMessage = messages.find((message) => message.sender === 'user');
           return {
             ...conversation,
             messages,
-            title: deriveConversationTitle(messages),
+            title:
+              conversation.title === 'New chat' && firstUserMessage
+                ? deriveConversationTitle(messages)
+                : conversation.title,
             updatedAt: now,
           };
         }),
@@ -137,11 +182,17 @@ export function useConversations() {
     activeId: state.activeId,
     activeConversation,
     messages: activeConversation?.messages ?? [],
+    isLoading,
+    error,
+    setError,
     selectConversation,
     newChat,
+    createConversation,
     deleteConversation,
     renameConversation,
     removeAllConversations,
     setActiveMessages,
   };
 }
+
+export default useConversations;

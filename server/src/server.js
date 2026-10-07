@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createApp } from './app.js';
 import config from './config/env.js';
 import logger from './config/logger.js';
+import { pool } from './db/pool.js';
 
 /**
  * Process entry point. Owns startup, the request timeout, and graceful
@@ -48,11 +49,12 @@ function shutdown(signal) {
   }, 10_000);
   forceExitTimer.unref();
 
-  server.close((error) => {
+  server.close(async (error) => {
     if (error) {
       logger.error({ err: error }, 'Error while closing server');
       process.exit(1);
     }
+    await pool?.end();
     logger.info('Server closed');
     process.exit(0);
   });
