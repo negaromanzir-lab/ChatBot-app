@@ -160,21 +160,6 @@
   border-top: 1px solid var(--color-border);
 }
 
-.sidebar__sign-out {
-  padding: 6px 8px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.sidebar__sign-out:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-text);
-}
-
 .sidebar__profile {
   display: flex;
   align-items: center;

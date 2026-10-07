@@ -7,8 +7,8 @@ import config from './config/env.js';
 import logger from './config/logger.js';
 import createApiRouter from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
-import { createSessionMiddleware, createSessionStore } from './db/sessionStore.js';
 import { verifyOrigin } from './middleware/verifyOrigin.js';
+import { clerkMiddleware } from '@clerk/express';
 
 /**
  * Builds the Express application without starting a listener.
@@ -74,14 +74,16 @@ export function createApp(options = {}) {
 
   app.use(express.json({ limit: config.bodyLimit }));
 
-  const sessionStore =
-    options.sessionStore ??
-    (config.env === 'test' ? undefined : createSessionStore());
   app.use(
-    createSessionMiddleware({
-      store: sessionStore,
-      secret: options.sessionSecret,
-    }),
+    options.clerkAuthMiddleware ??
+      (config.env === 'test'
+        ? (_req, _res, next) => next()
+        : clerkMiddleware({
+            secretKey: config.clerk.secretKey,
+            publishableKey: config.clerk.publishableKey,
+            authorizedParties: config.corsOrigins,
+            clockSkewInMs: 30 * 60 * 1000,
+          })),
   );
   app.use(verifyOrigin);
   app.use('/api', createApiRouter(options));

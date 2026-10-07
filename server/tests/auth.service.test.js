@@ -1,51 +1,59 @@
-// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import { createAuthService } from '../src/modules/auth/auth.service.js';
 
-const user = {
-  id: 'user-id',
-  email: 'person@example.com',
-  created_at: new Date('2026-01-01T00:00:00.000Z'),
-};
-
-describe('auth service', () => {
-  it('stores a bcrypt hash and returns no password material', async () => {
+describe('Clerk user synchronization', () => {
+  it('synchronizes the Clerk ID with the verified account email', async () => {
     const repository = {
-      createUser: vi.fn(async ({ email }) => ({ ...user, email })),
-      findUserByEmail: vi.fn(),
-      findUserById: vi.fn(),
-    };
-    const service = createAuthService({ repository });
-
-    const result = await service.register({
-      email: 'person@example.com',
-      password: 'a-secure-password',
-    });
-
-    const [{ passwordHash }] = repository.createUser.mock.calls[0];
-    expect(passwordHash).not.toBe('a-secure-password');
-    expect(passwordHash).toMatch(/^\$2[aby]\$/);
-    expect(result).toEqual({
-      id: user.id,
-      email: user.email,
-      createdAt: user.created_at,
-    });
-    expect(JSON.stringify(result)).not.toContain('password');
-  });
-
-  it('uses one generic credential error for missing users and wrong passwords', async () => {
-    const repository = {
-      createUser: vi.fn(),
-      findUserByEmail: vi.fn().mockResolvedValue(null),
-      findUserById: vi.fn(),
+      findClerkUserById: vi.fn().mockResolvedValue(null),
+      syncClerkUser: vi.fn().mockResolvedValue({
+        id: 'local-user-id',
+        clerk_user_id: 'user_clerk_123',
+        email: 'person@example.com',
+      }),
     };
     const service = createAuthService({ repository });
 
     await expect(
-      service.login({ email: user.email, password: 'wrong-password' }),
-    ).rejects.toMatchObject({
-      code: 'INVALID_CREDENTIALS',
-      statusCode: 401,
+      service.syncClerkUser({
+        clerkUserId: 'user_clerk_123',
+        email: 'Person@Example.com',
+      }),
+    ).resolves.toMatchObject({
+      id: 'local-user-id',
+      clerk_user_id: 'user_clerk_123',
+      email: 'person@example.com',
     });
+    expect(repository.syncClerkUser).toHaveBeenCalledWith({
+      clerkUserId: 'user_clerk_123',
+      email: 'person@example.com',
+    });
+  });
+
+  it('does not create a local user without a Clerk ID and verified email', async () => {
+    const repository = {
+      findClerkUserById: vi.fn(),
+      syncClerkUser: vi.fn(),
+    };
+    const service = createAuthService({ repository });
+
+    await expect(
+      service.syncClerkUser({ clerkUserId: 'user_clerk_123', email: '' }),
+    ).rejects.toMatchObject({ statusCode: 403, code: 'VERIFIED_EMAIL_REQUIRED' });
+    expect(repository.syncClerkUser).not.toHaveBeenCalled();
+  });
+
+  it('maps an identity collision to a safe conflict response', async () => {
+    const repository = {
+      findClerkUserById: vi.fn(),
+      syncClerkUser: vi.fn().mockRejectedValue({ code: 'CLERK_IDENTITY_CONFLICT' }),
+    };
+    const service = createAuthService({ repository });
+
+    await expect(
+      service.syncClerkUser({
+        clerkUserId: 'user_clerk_123',
+        email: 'person@example.com',
+      }),
+    ).rejects.toMatchObject({ statusCode: 409, code: 'ACCOUNT_LINK_CONFLICT' });
   });
 });

@@ -92,6 +92,22 @@ describe('chatService', () => {
       expect(reply.message).toBe('Hello! How can I help?');
     });
 
+    it('sends only a selected model identifier and messages', async () => {
+      const fetchMock = stubFetch({
+        message: { role: 'assistant', content: 'Selected model reply' },
+      });
+
+      await requestAssistantReply({
+        model: 'gemini-default',
+        messages: [{ sender: 'user', message: 'Hello' }],
+      });
+
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+        model: 'gemini-default',
+        messages: [{ role: 'user', content: 'Hello' }],
+      });
+    });
+
     it('raises the server error message on a 4xx', async () => {
       stubFetch(
         { error: { code: 'VALIDATION_ERROR', message: 'The request body is invalid.' } },
@@ -164,6 +180,56 @@ describe('chatService', () => {
         status: 'complete',
       });
       expect(reply.id).toBe(onDelta.mock.calls[0][1].id);
+    });
+
+    it('sends a selected model identifier when streaming', async () => {
+      const fetchMock = stubFetch(
+        sse(
+          { type: 'delta', content: 'Hi' },
+          { type: 'done', message: { role: 'assistant', content: 'Hi' } },
+        ),
+      );
+
+      await streamAssistantReply({
+        model: 'claude-default',
+        messages: [{ sender: 'user', message: 'Hello' }],
+      });
+
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+        model: 'claude-default',
+        messages: [{ role: 'user', content: 'Hello' }],
+        stream: true,
+      });
+    });
+
+    it('sends conversation-bound attachment IDs with the chat request', async () => {
+      const fetchMock = stubFetch(
+        sse(
+          { type: 'delta', content: 'Found it' },
+          { type: 'done', message: { role: 'assistant', content: 'Found it' } },
+        ),
+      );
+      vi.mocked(appendConversationMessage).mockResolvedValue({
+        message: {
+          id: 'stored-reply',
+          sender: 'robot',
+          message: 'Found it',
+          createdAt: 123,
+        },
+      });
+
+      await streamAssistantReply({
+        conversationId: 'conversation-id',
+        fileIds: ['file-id'],
+        messages: [{ sender: 'user', message: 'Summarize this' }],
+      });
+
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+        conversationId: 'conversation-id',
+        fileIds: ['file-id'],
+        messages: [{ role: 'user', content: 'Summarize this' }],
+        stream: true,
+      });
     });
 
     it('persists the completed assistant reply once for a saved conversation', async () => {

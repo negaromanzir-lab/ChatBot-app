@@ -18,8 +18,15 @@ npm run db:migrate
 npm run dev
 ```
 
-Generate a fresh `SESSION_SECRET` in `.env` using the command documented there before
-starting the server. PostgreSQL is required for account and conversation storage.
+Add Clerk's publishable and secret keys from your Clerk Dashboard to `.env`.
+PostgreSQL is required for account and conversation storage.
+Configure email sign-up with email verification in Clerk; the backend only creates
+or links accounts from Clerk-verified primary email addresses.
+
+Enable model choices by adding one or more server-only keys to `.env`:
+`OPENAI_API_KEY`, `GEMINI_API_KEY`, and/or `ANTHROPIC_API_KEY`. The Settings
+dialog lists only configured models. The browser receives safe model IDs and
+labels; the backend resolves each ID to its provider, vendor model, and key.
 
 `npm run dev` starts both processes together:
 
@@ -32,27 +39,59 @@ Run them individually with `npm run dev:client` and `npm run dev:server`.
 
 ### Accounts and saved conversations
 
-Create an account or sign in with an email and a password of at least 12 characters.
-Passwords are stored as bcrypt hashes; the server issues an HTTP-only, SameSite session
-cookie stored in PostgreSQL. Conversation APIs require authentication and scope all reads
-and writes by the signed-in user. `POST /api/chat` also requires an authenticated
-session so anonymous callers cannot use the configured provider key. Existing local
+Sign-up, sign-in, profile, and sign-out are provided by Clerk. The browser sends its
+Clerk session token as a bearer token; the Express API verifies it using Clerk's
+server SDK. The backend derives account identity only from the verified token and
+synchronizes a local user row using Clerk's verified primary email. A matching
+legacy email account is linked to the Clerk ID, preserving its conversations.
+Conversation APIs and `POST /api/chat` require authentication and scope all access
+to that local user. User IDs supplied in request bodies are ignored. Existing local
 browser history is imported once after sign-in and cleared only after a successful import.
 
-The migration creates `users`, `sessions`, `conversations`, and `messages`, with cascade
-foreign keys, constraints, and indexes for conversation history and ordered message lookup.
+The migrations create `users`, `conversations`, and `messages`, with cascade foreign
+keys, constraints, and indexes for conversation history and ordered message lookup.
+The Clerk migration adds a unique Clerk user ID and removes the obsolete session table.
 AI provider keys remain server environment variables and are never stored in the database.
+
+Set `VITE_CLERK_PUBLISHABLE_KEY`, `CLERK_PUBLISHABLE_KEY`, and `CLERK_SECRET_KEY`
+from your Clerk Dashboard in `.env`. The `VITE_` key is public; never expose the
+server-only `CLERK_SECRET_KEY` to the frontend.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| `GET` | `/api/models` | List enabled safe model IDs for the signed-in user |
+| `POST` | `/api/files` | Upload one file with a `conversationId` multipart field |
 | `POST` | `/api/conversations` | Create a conversation |
 | `GET` | `/api/conversations` | List the signed-in user's conversations |
 | `GET` | `/api/conversations/:id` | Open a conversation and its messages |
 | `PATCH` | `/api/conversations/:id` | Rename a conversation |
 | `DELETE` | `/api/conversations/:id` | Delete a conversation and its messages |
 | `POST` | `/api/conversations/:id/messages` | Append a user or assistant message |
+| `GET` | `/api/conversations/:id/uploads` | List conversation file metadata |
+| `POST` | `/api/conversations/:id/uploads` | Upload one multipart `file` |
+| `GET` | `/api/conversations/:id/uploads/:uploadId` | Download an authorized file |
+| `DELETE` | `/api/conversations/:id/uploads/:uploadId` | Delete an authorized file |
 
 The first user message generates a useful title; the sidebar also supports renaming.
+
+### Conversation files
+
+Authenticated users can upload PDF, DOCX, UTF-8 text, Markdown, CSV, PNG, JPEG,
+and WebP files to a conversation. The server enforces the configured per-file
+limit (10 MiB by default), validates the extension and MIME type plus file
+signatures or text encoding, generates an opaque storage key, and saves bytes
+under private `UPLOAD_STORAGE_DIR` (default `.private-uploads/`, excluded from
+Git and not served as static assets). PostgreSQL stores metadata and extracted
+text, associated with the conversation owned by the authenticated account.
+
+PDF text is extracted with PDF.js; DOCX text is extracted with Mammoth; UTF-8
+text, Markdown, and CSV are decoded directly. Image bytes stay private and are
+sent only server-to-provider when the selected model advertises vision support.
+The provider adapters translate the same normalized text/image input to their
+own APIs. The upload path never executes uploaded files. Files are still
+available to download; removing a conversation also removes its private files.
+Extraction is stored separately from metadata and provider request formatting,
+leaving room for later chunking, embeddings, and RAG retrieval.
 
 ### Enabling a real AI provider
 
@@ -66,11 +105,12 @@ OPENAI_API_KEY=your-key-here
 OPENAI_MODEL=gpt-4o-mini
 ```
 
-The key is read by the Node server only and must never use a `VITE_` prefix. For an
-OpenAI-compatible service such as Groq, OpenRouter, Ollama, or LM Studio, select
-`AI_PROVIDER=openai-compatible` and configure `AI_PROVIDER_API_KEY`,
-`AI_PROVIDER_BASE_URL`, and `AI_PROVIDER_MODEL` instead. The React components continue to
-use the same `/api/chat` contract when the provider changes.
+To add Gemini or Claude, set `GEMINI_API_KEY` / `GEMINI_MODEL` or
+`ANTHROPIC_API_KEY` / `CLAUDE_MODEL`. API keys and vendor model names are read
+by Node only and must never use a `VITE_` prefix. `AI_DEFAULT_MODEL` can name a
+safe registry ID such as `openai-default`; it must be enabled with a server key.
+For an OpenAI-compatible endpoint, configure `AI_PROVIDER=openai-compatible`,
+`AI_PROVIDER_API_KEY`, `AI_PROVIDER_BASE_URL`, and `AI_PROVIDER_MODEL`.
 
 ## Scripts
 
@@ -94,10 +134,24 @@ Request:
 
 ```json
 {
+  "conversationId": "conversation-uuid",
+  "fileIds": ["file-uuid"],
   "messages": [{ "role": "user", "content": "Hello" }],
+  "model": "openai-default",
   "stream": true
 }
 ```
+
+`model` is optional and, when supplied, must be an ID returned by authenticated
+`GET /api/models`. The server rejects unknown or disabled IDs rather than
+falling back to another provider. If omitted, the configured available default
+is used.
+
+`conversationId` and `fileIds` are optional for text-only turns. To ask about
+attachments, send the active conversation ID and the IDs returned by `POST
+/api/files`. The server looks up every file through that authenticated user's
+conversation. Text is added as untrusted document context; image attachments
+require a vision-capable selected model.
 
 `role` must be `user` or `assistant`; `content` must be a non-empty string. Unknown fields
 are stripped rather than forwarded to the provider. `stream` is optional and defaults to

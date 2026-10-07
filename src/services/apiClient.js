@@ -26,6 +26,29 @@ export class ApiClientError extends Error {
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '');
 const DEFAULT_TIMEOUT_MS = 30_000;
+let getAuthToken = async () => null;
+
+export function setAuthTokenProvider(provider) {
+  getAuthToken = provider ?? (async () => null);
+}
+
+async function getRequestHeaders(body, acceptsStream = false) {
+  let token;
+  try {
+    token = await getAuthToken();
+  } catch (cause) {
+    throw new ApiClientError('Could not retrieve your sign-in token. Please sign in again.', {
+      code: 'AUTH_TOKEN_ERROR',
+      cause,
+    });
+  }
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  return {
+    ...(acceptsStream ? { accept: 'text/event-stream' } : {}),
+    ...(body === undefined || isFormData ? {} : { 'content-type': 'application/json' }),
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
+  };
+}
 
 /**
  * @param {string} path   Path relative to the API base, e.g. '/chat'
@@ -50,14 +73,21 @@ export async function apiRequest(path, options = {}) {
 
   let response;
   try {
+    const headers = await getRequestHeaders(body);
     response = await fetch(`${API_BASE_URL}${path}`, {
       method,
       credentials: 'include',
-      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers,
+      body:
+        body === undefined
+          ? undefined
+          : typeof FormData !== 'undefined' && body instanceof FormData
+            ? body
+            : JSON.stringify(body),
       signal: combinedSignal,
     });
   } catch (error) {
+    if (error instanceof ApiClientError) throw error;
     if (signal?.aborted) {
       throw new ApiClientError('Request cancelled.', { code: 'CANCELLED' });
     }
@@ -122,20 +152,21 @@ export async function apiStream(path, options = {}) {
 
   let response;
   try {
+    const headers = await getRequestHeaders(body, true);
     response = await fetch(`${API_BASE_URL}${path}`, {
       method,
       credentials: 'include',
-      headers:
+      headers,
+      body:
         body === undefined
-          ? { accept: 'text/event-stream' }
-          : {
-              accept: 'text/event-stream',
-              'content-type': 'application/json',
-            },
-      body: body === undefined ? undefined : JSON.stringify(body),
+          ? undefined
+          : typeof FormData !== 'undefined' && body instanceof FormData
+            ? body
+            : JSON.stringify(body),
       signal: combinedSignal,
     });
   } catch (error) {
+    if (error instanceof ApiClientError) throw error;
     if (signal?.aborted) {
       throw new ApiClientError('Request cancelled.', { code: 'CANCELLED' });
     }
@@ -188,3 +219,47 @@ export async function apiStream(path, options = {}) {
 }
 
 export { API_BASE_URL };
+
+export async function apiDownload(path, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      credentials: 'include',
+      headers: await getRequestHeaders(),
+      signal: timeoutSignal,
+    });
+  } catch (error) {
+    if (error instanceof ApiClientError) throw error;
+    if (timeoutSignal.aborted) {
+      throw new ApiClientError('The server took too long to respond. Please try again.', {
+        code: 'TIMEOUT',
+      });
+    }
+    throw new ApiClientError(
+      'Could not reach the server. Check that the backend is running.',
+      { code: 'NETWORK_ERROR', cause: error },
+    );
+  }
+
+  if (!response.ok) {
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new ApiClientError(
+        `The server returned an unexpected response (HTTP ${response.status}).`,
+        { status: response.status, code: 'INVALID_RESPONSE' },
+      );
+    }
+    throw new ApiClientError(
+      payload?.error?.message ?? `Request failed (HTTP ${response.status}).`,
+      {
+        status: response.status,
+        code: payload?.error?.code ?? 'UNKNOWN',
+        details: payload?.error?.details,
+      },
+    );
+  }
+  return response.blob();
+}

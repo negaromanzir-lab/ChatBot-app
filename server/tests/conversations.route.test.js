@@ -6,9 +6,11 @@ let server;
 let baseUrl;
 let conversationService;
 let authService;
+let clerkClient;
 
 const testUser = {
   id: 'c0a80101-0000-4000-8000-000000000001',
+  clerk_user_id: 'user_clerk_owner',
   email: 'owner@example.com',
   created_at: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -20,21 +22,23 @@ async function startServer() {
   }
 
   authService = {
-    register: vi.fn().mockResolvedValue({
-      id: testUser.id,
-      email: testUser.email,
-      createdAt: testUser.created_at,
-    }),
-    login: vi.fn().mockResolvedValue({
-      id: testUser.id,
-      email: testUser.email,
-      createdAt: testUser.created_at,
-    }),
-    findUserById: vi.fn().mockResolvedValue({
-      id: testUser.id,
-      email: testUser.email,
-      createdAt: testUser.created_at,
-    }),
+    findClerkUserById: vi.fn(async (clerkUserId) =>
+      clerkUserId === testUser.clerk_user_id ? testUser : null,
+    ),
+    syncClerkUser: vi.fn().mockResolvedValue(testUser),
+  };
+  clerkClient = {
+    users: {
+      getUser: vi.fn().mockResolvedValue({
+        id: testUser.clerk_user_id,
+        primaryEmailAddressId: 'email-1',
+        emailAddresses: [{
+          id: 'email-1',
+          emailAddress: testUser.email,
+          verification: { status: 'verified' },
+        }],
+      }),
+    },
   };
   conversationService = {
     create: vi.fn().mockResolvedValue({
@@ -51,33 +55,35 @@ async function startServer() {
 
   const app = createApp({
     authService,
+    clerkClient,
+    authResolver: (req) => req.auth,
     conversationService,
-    chatAuthMiddleware: (_req, _res, next) => next(),
+    clerkAuthMiddleware: (req, _res, next) => {
+      req.auth = req.get('authorization') === 'Bearer valid-clerk-token'
+        ? { userId: testUser.clerk_user_id }
+        : {};
+      next();
+    },
   });
   server = app.listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 }
 
-async function request(path, { method = 'GET', body, cookie } = {}) {
+async function request(path, {
+  method = 'GET',
+  body,
+  authenticated = true,
+} = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers: {
       ...(body ? { 'content-type': 'application/json' } : {}),
-      ...(cookie ? { cookie } : {}),
+      ...(authenticated ? { authorization: 'Bearer valid-clerk-token' } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
   return response;
-}
-
-async function signIn() {
-  const response = await request('/api/auth/login', {
-    method: 'POST',
-    body: { email: testUser.email, password: 'a-secure-test-password' },
-  });
-  expect(response.status).toBe(200);
-  return response.headers.get('set-cookie').split(';')[0];
 }
 
 beforeEach(startServer);
@@ -89,23 +95,48 @@ afterAll(async () => {
   }
 });
 
-describe('authentication and conversation ownership', () => {
-  it('rejects unauthenticated conversation access', async () => {
-    const response = await request('/api/conversations');
+describe('Clerk authentication and conversation ownership', () => {
+  it('rejects requests without a verified Clerk identity', async () => {
+    const response = await request('/api/conversations', { authenticated: false });
     expect(response.status).toBe(401);
     expect((await response.json()).error.code).toBe('AUTH_REQUIRED');
   });
 
-  it('creates a session after login and scopes the conversation list to that user', async () => {
-    const cookie = await signIn();
-    const response = await request('/api/conversations', { cookie });
+  it('synchronizes an authenticated Clerk identity when no local user exists', async () => {
+    authService.findClerkUserById.mockResolvedValueOnce(null);
+
+    const response = await request('/api/conversations');
 
     expect(response.status).toBe(200);
+    expect(clerkClient.users.getUser).toHaveBeenCalledWith(testUser.clerk_user_id);
+    expect(authService.syncClerkUser).toHaveBeenCalledWith({
+      clerkUserId: testUser.clerk_user_id,
+      email: testUser.email,
+    });
     expect(conversationService.list).toHaveBeenCalledWith(testUser.id);
   });
 
-  it('creates, renames, and deletes only with the authenticated user id', async () => {
-    const cookie = await signIn();
+  it('does not synchronize accounts using an unverified email address', async () => {
+    authService.findClerkUserById.mockResolvedValueOnce(null);
+    clerkClient.users.getUser.mockResolvedValueOnce({
+      id: testUser.clerk_user_id,
+      primaryEmailAddressId: 'email-1',
+      emailAddresses: [{
+        id: 'email-1',
+        emailAddress: testUser.email,
+        verification: { status: 'unverified' },
+      }],
+    });
+
+    const response = await request('/api/conversations');
+
+    expect(response.status).toBe(403);
+    expect((await response.json()).error.code).toBe('VERIFIED_EMAIL_REQUIRED');
+    expect(authService.syncClerkUser).not.toHaveBeenCalled();
+    expect(conversationService.list).not.toHaveBeenCalled();
+  });
+
+  it('creates, renames, and deletes only with the database user for the verified Clerk identity', async () => {
     const conversation = {
       id: 'c0a80101-0000-4000-8000-000000000002',
       userId: testUser.id,
@@ -117,16 +148,14 @@ describe('authentication and conversation ownership', () => {
 
     const created = await request('/api/conversations', {
       method: 'POST',
-      cookie,
-      body: {},
+      body: { user_id: 'attacker-user-id' },
     });
     expect(created.status).toBe(201);
     expect(conversationService.create).toHaveBeenCalledWith(testUser.id, {});
 
     const renamed = await request(`/api/conversations/${conversation.id}`, {
       method: 'PATCH',
-      cookie,
-      body: { title: 'A useful title' },
+      body: { title: 'A useful title', user_id: 'attacker-user-id' },
     });
     expect(renamed.status).toBe(200);
     expect(conversationService.rename).toHaveBeenCalledWith(
@@ -137,25 +166,22 @@ describe('authentication and conversation ownership', () => {
 
     const deleted = await request(`/api/conversations/${conversation.id}`, {
       method: 'DELETE',
-      cookie,
     });
     expect(deleted.status).toBe(204);
     expect(conversationService.remove).toHaveBeenCalledWith(testUser.id, conversation.id);
   });
 
   it('hides conversations owned by another account', async () => {
-    const cookie = await signIn();
     const foreignId = 'c0a80101-0000-4000-8000-000000000099';
     conversationService.get.mockResolvedValueOnce(null);
 
-    const response = await request(`/api/conversations/${foreignId}`, { cookie });
+    const response = await request(`/api/conversations/${foreignId}`);
 
     expect(response.status).toBe(404);
     expect(conversationService.get).toHaveBeenCalledWith(testUser.id, foreignId);
   });
 
-  it('persists messages through the authenticated message endpoint', async () => {
-    const cookie = await signIn();
+  it('persists messages through the authenticated user identity', async () => {
     const conversationId = 'c0a80101-0000-4000-8000-000000000002';
     conversationService.addMessage.mockResolvedValueOnce({
       conversation: { id: conversationId, title: 'What is PostgreSQL?' },
@@ -169,8 +195,7 @@ describe('authentication and conversation ownership', () => {
 
     const response = await request(`/api/conversations/${conversationId}/messages`, {
       method: 'POST',
-      cookie,
-      body: { role: 'user', content: 'What is PostgreSQL?' },
+      body: { role: 'user', content: 'What is PostgreSQL?', user_id: 'attacker-user-id' },
     });
 
     expect(response.status).toBe(201);

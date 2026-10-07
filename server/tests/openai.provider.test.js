@@ -51,6 +51,33 @@ describe('OpenAI provider', () => {
     });
   });
 
+  it('encodes normalized image attachments as provider data URLs', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: 'A cat' } }] }),
+        { status: 200 },
+      ),
+    );
+    const provider = createProvider(fetchImpl);
+
+    await provider.generateResponse([{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'What is this?' },
+        { type: 'image', mediaType: 'image/jpeg', data: 'aW1hZ2U=' },
+      ],
+    }]);
+
+    const payload = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(payload.messages[1].content).toEqual([
+      { type: 'text', text: 'What is this?' },
+      {
+        type: 'image_url',
+        image_url: { url: 'data:image/jpeg;base64,aW1hZ2U=' },
+      },
+    ]);
+  });
+
   it('is selected by the provider registry and used by chat orchestration', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(

@@ -10,16 +10,10 @@ function App() {
   }
 
   if (!auth.user) {
-    return (
-      <AuthScreen
-        initialError={auth.error}
-        onSignIn={auth.signIn}
-        onSignUp={auth.signUp}
-      />
-    );
+    return <AuthScreen />;
   }
 
-  return <ChatPage user={auth.user} onSignOut={auth.signOut} />;
+  return <ChatPage user={auth.user} />;
 }
 
 export default App;

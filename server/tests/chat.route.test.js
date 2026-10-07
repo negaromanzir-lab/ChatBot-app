@@ -40,6 +40,7 @@ async function startServer({
   provider: override,
   rateLimiter,
   enforceChatAuth = false,
+  allowAuthenticatedRoutes = false,
 } = {}) {
   if (server) {
     await new Promise((resolve) => server.close(resolve));
@@ -52,6 +53,12 @@ async function startServer({
     // Rate limiting has its own tests; disabling it elsewhere keeps assertions
     // independent of the shared request counter.
     rateLimiter: rateLimiter ?? passThroughLimiter,
+    authResolver: (req) => req.auth ?? {},
+    ...(allowAuthenticatedRoutes ? { requireAuthMiddleware: passThroughAuth } : {}),
+    clerkAuthMiddleware: (req, _res, next) => {
+      req.auth = {};
+      next();
+    },
     ...(enforceChatAuth ? {} : { chatAuthMiddleware: passThroughAuth }),
   });
 
@@ -90,7 +97,7 @@ afterAll(async () => {
 });
 
 describe('POST /api/chat', () => {
-  it('requires an authenticated session by default', async () => {
+  it('requires a verified Clerk identity by default', async () => {
     await startServer({ enforceChatAuth: true });
 
     const response = await postChat(validBody);
@@ -121,7 +128,27 @@ describe('POST /api/chat', () => {
 
       await postChat({ messages: conversation });
 
-      expect(provider.generateReply).toHaveBeenCalledWith(conversation);
+      expect(provider.generateReply).toHaveBeenCalledWith(conversation, {
+        model: undefined,
+        userId: undefined,
+        conversationId: undefined,
+        fileIds: [],
+      });
+    });
+
+    it('forwards only the selected safe model identifier as server-side options', async () => {
+      const response = await postChat({
+        ...validBody,
+        model: 'local-offline',
+      });
+
+      expect(response.status).toBe(200);
+      expect(provider.generateReply).toHaveBeenCalledWith(validBody.messages, {
+        model: 'local-offline',
+        userId: undefined,
+        conversationId: undefined,
+        fileIds: [],
+      });
     });
 
     it('accepts an assistant role in the request history', async () => {
@@ -247,9 +274,51 @@ describe('POST /api/chat', () => {
         message: { role: 'assistant', content: 'Hello! How can I help?' },
       });
     });
+
+    describe('GET /api/models', () => {
+      it('requires authentication', async () => {
+        await startServer({ enforceChatAuth: true });
+
+        const response = await fetch(`${baseUrl}/api/models`);
+
+        expect(response.status).toBe(401);
+      });
+
+      it('returns only safe model IDs and display metadata', async () => {
+        await startServer({ allowAuthenticatedRoutes: true });
+
+        const response = await fetch(`${baseUrl}/api/models`);
+        const catalog = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(catalog.defaultModelId).toEqual(expect.any(String));
+        expect(catalog.models).toContainEqual({
+          id: 'local-offline',
+          label: 'Local offline',
+          provider: 'local',
+          supportsVision: false,
+        });
+        expect(catalog.models.every((model) =>
+          Object.keys(model).sort().join(',') === 'id,label,provider,supportsVision')).toBe(true);
+        expect(JSON.stringify(catalog)).not.toMatch(/apiKey|secret|gpt-4o-mini|gemini-2\.5-flash/);
+      });
+    });
   });
 
   describe('validation', () => {
+    it('requires a conversation when file IDs are supplied', async () => {
+      const response = await postChat({
+        ...validBody,
+        fileIds: ['c0a80101-0000-4000-8000-000000000003'],
+      });
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: 'VALIDATION_ERROR' },
+      });
+      expect(provider.generateReply).not.toHaveBeenCalled();
+    });
+
     it('rejects a missing messages array', async () => {
       const response = await postChat({});
       const body = await response.json();

@@ -19,9 +19,17 @@ export function loadPreferences() {
       ? stored.displayName.trim()
       : DEFAULT_DISPLAY_NAME;
 
-  return { displayName };
+  const selectedModelId =
+    typeof stored?.selectedModelId === 'string' && /^[a-z0-9][a-z0-9-]{1,63}$/.test(stored.selectedModelId)
+      ? stored.selectedModelId
+      : null;
+
+  return { displayName, selectedModelId };
 }
 
-export function savePreferences({ displayName }) {
-  writeJson(STORAGE_KEY, { displayName });
+export function savePreferences({ displayName, selectedModelId }) {
+  writeJson(STORAGE_KEY, {
+    displayName,
+    ...(selectedModelId ? { selectedModelId } : {}),
+  });
 }

@@ -111,6 +111,16 @@
   outline: none;
 }
 
+.settings__select {
+  color: var(--color-text);
+}
+
+.settings__error {
+  margin: 0;
+  color: var(--color-danger, #b42318);
+  font-size: 13px;
+}
+
 .settings__footer {
   display: flex;
   justify-content: flex-end;

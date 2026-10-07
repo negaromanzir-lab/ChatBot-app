@@ -30,6 +30,10 @@ export class ApiError extends Error {
     return new ApiError(403, code, message);
   }
 
+  static conflict(code, message) {
+    return new ApiError(409, code, message);
+  }
+
   static notFound(code, message) {
     return new ApiError(404, code, message);
   }

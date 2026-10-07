@@ -1,4 +1,5 @@
 import { createConversationRepository } from './conversation.repository.js';
+import { createUploadService } from '../uploads/upload.service.js';
 
 const TITLE_MAX_LENGTH = 48;
 
@@ -12,7 +13,9 @@ export function deriveTitle(content) {
 
 export function createConversationService({
   repository = createConversationRepository(),
+  uploadService,
 } = {}) {
+  let uploads = uploadService;
   async function create(userId, { title } = {}) {
     return repository.create(userId, normalizeTitle(title));
   }
@@ -30,7 +33,11 @@ export function createConversationService({
   }
 
   async function remove(userId, conversationId) {
-    return repository.delete(userId, conversationId);
+    uploads ??= createUploadService();
+    const storageKeys = await uploads.listStorageKeysForConversation(userId, conversationId);
+    const deleted = await repository.delete(userId, conversationId);
+    if (deleted) await uploads.removeStorageKeys(storageKeys);
+    return deleted;
   }
 
   async function addMessage(userId, conversationId, message) {

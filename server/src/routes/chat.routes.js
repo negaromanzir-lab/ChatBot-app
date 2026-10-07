@@ -14,6 +14,9 @@ import { createChatController } from '../controllers/chat.controller.js';
  * this server-side is the point: the frontend is not a trust boundary.
  */
 export const chatRequestSchema = z.object({
+  model: z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/).optional(),
+  conversationId: z.string().uuid().optional(),
+  fileIds: z.array(z.string().uuid()).max(10).default([]),
   messages: z
     .array(
       z.object({
@@ -29,6 +32,14 @@ export const chatRequestSchema = z.object({
     .min(1, 'messages must contain at least one message')
     .max(config.limits.maxMessages, `messages must contain at most ${config.limits.maxMessages} messages`),
   stream: z.boolean().default(false),
+}).superRefine((body, context) => {
+  if (body.fileIds.length && !body.conversationId) {
+    context.addIssue({
+      code: 'custom',
+      path: ['conversationId'],
+      message: 'conversationId is required when files are attached',
+    });
+  }
 });
 
 export function createChatRouter({ chatController, chatService, rateLimiter } = {}) {

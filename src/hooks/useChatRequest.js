@@ -31,6 +31,8 @@ function findLastUserMessageIndex(messages) {
 export function useChatRequest({
   messages,
   conversationId,
+  model,
+  fileIds = [],
   setMessages,
   createConversation,
   service = streamAssistantReply,
@@ -67,6 +69,8 @@ export function useChatRequest({
         const reply = await service({
           messages: conversation,
           conversationId,
+          model,
+          fileIds,
           signal: controller.signal,
           onDelta: (_delta, partialReply) => {
             streamedReplyIdRef.current = partialReply.id;
@@ -120,7 +124,7 @@ export function useChatRequest({
         setIsPending(false);
       }
     },
-    [service, setMessages],
+    [service, setMessages, model, fileIds],
   );
 
   /** Appends the user's turn, then asks the backend to answer it. */

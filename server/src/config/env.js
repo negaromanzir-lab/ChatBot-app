@@ -5,6 +5,10 @@ const booleanFromString = z
   .enum(['true', 'false'])
   .default('false')
   .transform((value) => value === 'true');
+const booleanWithDefault = (defaultValue) =>
+  z.enum(['true', 'false'])
+    .default(defaultValue ? 'true' : 'false')
+    .transform((value) => value === 'true');
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -13,7 +17,10 @@ const schema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   CORS_ORIGINS: z.string().default('http://localhost:5173'),
   DATABASE_URL: z.string().min(1).optional(),
-  SESSION_SECRET: z.string().min(32).optional(),
+  CLERK_SECRET_KEY: z.string().startsWith('sk_').optional(),
+  CLERK_PUBLISHABLE_KEY: z.string().startsWith('pk_').optional(),
+  UPLOAD_STORAGE_DIR: z.string().min(1).default('.private-uploads'),
+  MAX_UPLOAD_SIZE_BYTES: z.coerce.number().int().positive().max(25 * 1024 * 1024).default(10 * 1024 * 1024),
   TRUST_PROXY: booleanFromString,
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
@@ -22,10 +29,19 @@ const schema = z.object({
   AI_PROVIDER_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
   AI_PROVIDER_MODEL: z.string().default('gpt-4o-mini'),
   AI_PROVIDER_API_KEY: z.string().optional(),
+  AI_DEFAULT_MODEL: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/).optional(),
+  ),
   AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
   AI_MAX_TOKENS: z.coerce.number().int().positive().default(512),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().optional(),
+  OPENAI_MODEL_SUPPORTS_VISION: booleanWithDefault(true),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  CLAUDE_MODEL: z.string().default('claude-3-5-sonnet-latest'),
   MAX_MESSAGES_PER_REQUEST: z.coerce.number().int().positive().default(50),
   MAX_CONTENT_LENGTH: z.coerce.number().int().positive().default(4000),
 });
@@ -38,13 +54,23 @@ if (!parsed.success) {
 }
 
 const raw = parsed.data;
+const configuredProviderKeys = {
+  'openai-default': raw.OPENAI_API_KEY || (['openai', 'openai-direct'].includes(raw.AI_PROVIDER) ? raw.AI_PROVIDER_API_KEY : undefined),
+  'gemini-default': raw.GEMINI_API_KEY,
+  'claude-default': raw.ANTHROPIC_API_KEY,
+  'openai-compatible-default': raw.AI_PROVIDER_API_KEY,
+};
+if (raw.AI_DEFAULT_MODEL && raw.AI_DEFAULT_MODEL !== 'local-offline' && !configuredProviderKeys[raw.AI_DEFAULT_MODEL]) {
+  process.stderr.write(`AI_DEFAULT_MODEL "${raw.AI_DEFAULT_MODEL}" is not configured with a server-side provider key.\n`);
+  process.exit(1);
+}
 if (raw.NODE_ENV !== 'test' && !raw.DATABASE_URL) {
   process.stderr.write('DATABASE_URL is required. Start PostgreSQL and configure it in .env.\n');
   process.exit(1);
 }
 
-if (raw.NODE_ENV !== 'test' && (!raw.SESSION_SECRET || raw.SESSION_SECRET.length < 32)) {
-  process.stderr.write('SESSION_SECRET must be set to a random value of at least 32 characters.\n');
+if (raw.NODE_ENV !== 'test' && (!raw.CLERK_SECRET_KEY || !raw.CLERK_PUBLISHABLE_KEY)) {
+  process.stderr.write('CLERK_SECRET_KEY and CLERK_PUBLISHABLE_KEY are required.\n');
   process.exit(1);
 }
 if (raw.NODE_ENV === 'production') {
@@ -81,11 +107,41 @@ export const config = Object.freeze({
   logLevel: raw.NODE_ENV === 'test' ? 'silent' : raw.LOG_LEVEL,
   corsOrigins: raw.CORS_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean),
   databaseUrl: raw.DATABASE_URL,
-  sessionSecret: raw.SESSION_SECRET,
+  clerk: Object.freeze({
+    secretKey: raw.CLERK_SECRET_KEY,
+    publishableKey: raw.CLERK_PUBLISHABLE_KEY,
+  }),
+  uploads: Object.freeze({
+    storageDirectory: raw.UPLOAD_STORAGE_DIR,
+    maxSizeBytes: raw.MAX_UPLOAD_SIZE_BYTES,
+  }),
   trustProxy: raw.TRUST_PROXY,
   rateLimit: { windowMs: raw.RATE_LIMIT_WINDOW_MS, max: raw.RATE_LIMIT_MAX },
   bodyLimit: raw.BODY_LIMIT,
-  ai: Object.freeze({ provider: raw.AI_PROVIDER, baseUrl: raw.AI_PROVIDER_BASE_URL.replace(/\/+$/, ''), model, apiKey, timeoutMs: raw.AI_REQUEST_TIMEOUT_MS, maxTokens: raw.AI_MAX_TOKENS }),
+  ai: Object.freeze({
+    provider: raw.AI_PROVIDER,
+    defaultModel: raw.AI_DEFAULT_MODEL,
+    baseUrl: raw.AI_PROVIDER_BASE_URL.replace(/\/+$/, ''),
+    model,
+    apiKey,
+    providers: Object.freeze({
+      openai: Object.freeze({
+        apiKey: raw.OPENAI_API_KEY || (['openai', 'openai-direct'].includes(raw.AI_PROVIDER) ? raw.AI_PROVIDER_API_KEY : undefined),
+        model: raw.OPENAI_MODEL || raw.AI_PROVIDER_MODEL,
+        supportsVision: raw.OPENAI_MODEL_SUPPORTS_VISION,
+      }),
+      gemini: Object.freeze({ apiKey: raw.GEMINI_API_KEY, model: raw.GEMINI_MODEL, supportsVision: true }),
+      claude: Object.freeze({ apiKey: raw.ANTHROPIC_API_KEY, model: raw.CLAUDE_MODEL, supportsVision: true }),
+      openaiCompatible: Object.freeze({
+        apiKey: raw.AI_PROVIDER_API_KEY,
+        baseUrl: raw.AI_PROVIDER_BASE_URL.replace(/\/+$/, ''),
+        model: raw.AI_PROVIDER_MODEL,
+        supportsVision: false,
+      }),
+    }),
+    timeoutMs: raw.AI_REQUEST_TIMEOUT_MS,
+    maxTokens: raw.AI_MAX_TOKENS,
+  }),
   limits: Object.freeze({ maxMessages: raw.MAX_MESSAGES_PER_REQUEST, maxContentLength: raw.MAX_CONTENT_LENGTH }),
 });
 

@@ -47,10 +47,16 @@ export function createChatController({ chatService } = {}) {
   const service = chatService ?? createChatService();
 
   async function sendMessage(req, res) {
-    const { messages, stream } = req.body;
+    const { messages, stream, model, conversationId, fileIds } = req.body;
+    const options = {
+      model,
+      userId: req.user?.id,
+      conversationId,
+      fileIds,
+    };
 
     if (!stream) {
-      const message = await service.generateAssistantReply(messages);
+      const message = await service.generateAssistantReply(messages, options);
       res.status(200).json({ message });
       return;
     }
@@ -74,6 +80,7 @@ export function createChatController({ chatService } = {}) {
     try {
       for await (const chunk of service.streamAssistantReply(messages, {
         signal: controller.signal,
+        ...options,
       })) {
         if (controller.signal.aborted) break;
         content += chunk;

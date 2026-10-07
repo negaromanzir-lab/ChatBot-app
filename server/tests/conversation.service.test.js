@@ -32,4 +32,27 @@ describe('conversation service', () => {
       },
     );
   });
+
+  it('removes conversation files from private storage after deleting the conversation', async () => {
+    const repository = {
+      delete: vi.fn().mockResolvedValue(true),
+    };
+    const uploadService = {
+      listStorageKeysForConversation: vi.fn().mockResolvedValue(['private-file-key']),
+      removeStorageKeys: vi.fn(),
+    };
+    const service = createConversationService({ repository, uploadService });
+
+    await expect(service.remove('owner-id', 'conversation-id')).resolves.toBe(true);
+
+    expect(uploadService.listStorageKeysForConversation).toHaveBeenCalledWith(
+      'owner-id',
+      'conversation-id',
+    );
+    expect(repository.delete).toHaveBeenCalledWith('owner-id', 'conversation-id');
+    expect(uploadService.removeStorageKeys).toHaveBeenCalledWith(['private-file-key']);
+    expect(repository.delete.mock.invocationCallOrder[0]).toBeLessThan(
+      uploadService.removeStorageKeys.mock.invocationCallOrder[0],
+    );
+  });
 });

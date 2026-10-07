@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../components/layout/AppShell.jsx';
 import { ChatHeader } from '../components/layout/ChatHeader.jsx';
 import { Sidebar } from '../components/sidebar/Sidebar.jsx';
@@ -11,6 +11,13 @@ import { useChatRequest } from '../hooks/useChatRequest.js';
 import { useTheme } from '../hooks/useTheme.js';
 import { usePreferences } from '../hooks/usePreferences.js';
 import { useMediaQuery, DESKTOP_QUERY } from '../hooks/useMediaQuery.js';
+import { listAvailableModels } from '../services/modelService.js';
+import {
+  deleteConversationFile,
+  downloadConversationFile,
+  listConversationUploads,
+  uploadConversationFile,
+} from '../services/conversationService.js';
 
 /**
  * Page-level composition: owns no rendering logic of its own, only the wiring.
@@ -26,9 +33,33 @@ import { useMediaQuery, DESKTOP_QUERY } from '../hooks/useMediaQuery.js';
  * - The sidebar drawer is pure chrome: it closes on selection, on backdrop or
  *   Escape, and whenever the viewport grows past the breakpoint.
  */
-export function ChatPage({ user, onSignOut }) {
+export function ChatPage({ user }) {
   const { preference, setPreference, theme, toggleTheme } = useTheme();
   const { preferences, updatePreference } = usePreferences();
+  const [modelCatalog, setModelCatalog] = useState({ models: [], defaultModelId: null });
+  const [modelCatalogError, setModelCatalogError] = useState(null);
+  const selectedModelId = preferences.selectedModelId;
+  const selectedModel = modelCatalog.models.find(({ id }) => id === selectedModelId);
+
+  useEffect(() => {
+    let active = true;
+    listAvailableModels()
+      .then((catalog) => {
+        if (!active) return;
+        setModelCatalog(catalog);
+        const savedModel = catalog.models.find(({ id }) => id === preferences.selectedModelId);
+        const selectedModel = savedModel?.id ?? catalog.defaultModelId;
+        if (selectedModel && selectedModel !== preferences.selectedModelId) {
+          updatePreference({ selectedModelId: selectedModel });
+        }
+      })
+      .catch((caught) => {
+        if (active) {
+          setModelCatalogError(caught.message || 'Could not load available AI models.');
+        }
+      });
+    return () => { active = false; };
+  }, [preferences.selectedModelId, updatePreference]);
 
   const {
     conversations,
@@ -44,7 +75,16 @@ export function ChatPage({ user, onSignOut }) {
     createConversation,
     isLoading: conversationsLoading,
     error: conversationError,
-  } = useConversations();
+  } = useConversations(user);
+
+  const [uploads, setUploads] = useState([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+  const activeConversationIdRef = useRef(activeId);
+  const uploadsConversationIdRef = useRef(null);
+  const uploadRevisionRef = useRef(0);
+  const attachmentIds = useMemo(() => uploads.map(({ id }) => id), [uploads]);
+  activeConversationIdRef.current = activeId;
 
   const {
     isPending,
@@ -59,6 +99,8 @@ export function ChatPage({ user, onSignOut }) {
   } = useChatRequest({
     messages,
     conversationId: activeId,
+    model: selectedModelId,
+    fileIds: attachmentIds,
     setMessages: setActiveMessages,
     createConversation,
   });
@@ -83,6 +125,87 @@ export function ChatPage({ user, onSignOut }) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSidebarOpen, isDesktop]);
+
+  useEffect(() => {
+    if (uploadsConversationIdRef.current === activeId) return undefined;
+
+    let active = true;
+    const revision = uploadRevisionRef.current;
+    uploadsConversationIdRef.current = activeId;
+    setUploads([]);
+    setUploadError(null);
+    if (!activeId) return () => { active = false; };
+
+    listConversationUploads(activeId)
+      .then((items) => {
+        if (
+          active
+          && uploadsConversationIdRef.current === activeId
+          && revision === uploadRevisionRef.current
+        ) {
+          setUploads(items);
+        }
+      })
+      .catch((caught) => {
+        if (active) {
+          setUploadError(caught.message || 'Could not load conversation files.');
+        }
+      });
+    return () => { active = false; };
+  }, [activeId]);
+
+  async function handleUploadFiles(files) {
+    setUploadError(null);
+    setIsUploading(true);
+    let conversationId = activeId;
+    try {
+      if (!conversationId) {
+        const conversation = await createConversation();
+        conversationId = conversation.id;
+        activeConversationIdRef.current = conversationId;
+        uploadsConversationIdRef.current = conversationId;
+      }
+      for (const file of files) {
+        const upload = await uploadConversationFile(conversationId, file);
+        if (activeConversationIdRef.current === conversationId) {
+          uploadRevisionRef.current += 1;
+          setUploads((current) => [...current, upload]);
+        }
+      }
+    } catch (caught) {
+      setUploadError(caught.message || 'Could not upload the selected file.');
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  async function handleDownloadUpload(upload) {
+    if (!activeId) return;
+    try {
+      const blob = await downloadConversationFile(activeId, upload.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = upload.name;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (caught) {
+      setUploadError(caught.message || 'Could not download this file.');
+    }
+  }
+
+  async function handleDeleteUpload(upload) {
+    if (!activeId) return;
+    setUploadError(null);
+    try {
+      await deleteConversationFile(activeId, upload.id);
+      if (activeConversationIdRef.current === activeId) {
+        setUploads((current) => current.filter((item) => item.id !== upload.id));
+      }
+    } catch (caught) {
+      setUploadError(caught.message || 'Could not remove this file.');
+    }
+  }
 
   function handleNewChat() {
     newChat();
@@ -118,12 +241,11 @@ export function ChatPage({ user, onSignOut }) {
         <Sidebar
           conversations={conversations}
           activeId={activeId}
-          displayName={user.email}
+          displayName={user.fullName || user.email}
           onSelect={handleSelectConversation}
           onNewChat={handleNewChat}
           onDelete={deleteConversation}
           onRename={renameConversation}
-          onSignOut={onSignOut}
           onClose={() => setIsSidebarOpen(false)}
           onOpenSettings={() => setIsSettingsOpen(true)}
         />
@@ -158,6 +280,14 @@ export function ChatPage({ user, onSignOut }) {
         onDismissError={clearError}
         wasStopped={wasStopped}
         onDismissStopped={dismissStoppedNotice}
+        uploads={uploads}
+        isUploading={isUploading}
+        onUploadFiles={handleUploadFiles}
+        onDownloadUpload={handleDownloadUpload}
+        onDeleteUpload={handleDeleteUpload}
+        uploadError={uploadError}
+        onDismissUploadError={() => setUploadError(null)}
+        supportsVision={selectedModel?.supportsVision}
       />
 
       <SettingsPanel
@@ -165,6 +295,10 @@ export function ChatPage({ user, onSignOut }) {
         onClose={() => setIsSettingsOpen(false)}
         themePreference={preference}
         onThemeChange={setPreference}
+        models={modelCatalog.models}
+        selectedModelId={selectedModelId}
+        onModelChange={(modelId) => updatePreference({ selectedModelId: modelId })}
+        modelError={modelCatalogError}
         displayName={preferences.displayName}
         onDisplayNameChange={(value) => updatePreference({ displayName: value })}
         onClearHistory={handleClearHistory}

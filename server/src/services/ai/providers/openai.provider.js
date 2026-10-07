@@ -88,7 +88,7 @@ export function createOpenAIProvider(overrides = {}) {
           (message) =>
             message &&
             (message.role === 'user' || message.role === 'assistant') &&
-            typeof message.content === 'string',
+            (typeof message.content === 'string' || Array.isArray(message.content)),
         )
       : [];
 
@@ -100,9 +100,33 @@ export function createOpenAIProvider(overrides = {}) {
     }
 
     const instruction = systemInstruction ?? settings.systemInstruction;
+    const normalizedMessages = validMessages.map((message) => ({
+      ...message,
+      content: typeof message.content === 'string'
+        ? message.content
+        : message.content.flatMap((part) => {
+          if (part?.type === 'text' && typeof part.text === 'string') {
+            return [{ type: 'text', text: part.text }];
+          }
+          if (
+            part?.type === 'image'
+            && typeof part.mediaType === 'string'
+            && typeof part.data === 'string'
+          ) {
+            return [{
+              type: 'image_url',
+              image_url: {
+                url: `data:${part.mediaType};base64,${part.data}`,
+              },
+            }];
+          }
+          return [];
+        }),
+    }));
+
     return settings.includeSystemInstruction && instruction
-      ? [{ role: 'system', content: instruction }, ...validMessages]
-      : validMessages;
+      ? [{ role: 'system', content: instruction }, ...normalizedMessages]
+      : normalizedMessages;
   }
 
   function createRequest(messages, { systemInstruction, signal, stream = false } = {}) {
