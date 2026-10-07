@@ -1,5 +1,6 @@
 import { apiRequest, apiStream, ApiClientError } from './apiClient.js';
 import { createId } from '../utils/id.js';
+import { appendConversationMessage } from './conversationService.js';
 
 /**
  * Chat feature service: the only place that knows the chat endpoint exists.
@@ -88,6 +89,7 @@ export async function requestAssistantReply({ messages, signal } = {}) {
  */
 export async function streamAssistantReply({
   messages,
+  conversationId,
   signal,
   onDelta = () => {},
 } = {}) {
@@ -198,11 +200,16 @@ export async function streamAssistantReply({
     });
   }
 
-  return {
+  const reply = {
     id: replyId,
     sender: 'robot',
     message: fullContent,
     createdAt: Date.now(),
     status: 'complete',
   };
+  if (conversationId) {
+    const persisted = await appendConversationMessage(conversationId, reply);
+    return { ...persisted.message, status: 'complete' };
+  }
+  return reply;
 }

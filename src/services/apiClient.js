@@ -52,6 +52,7 @@ export async function apiRequest(path, options = {}) {
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       method,
+      credentials: 'include',
       headers: body === undefined ? undefined : { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: combinedSignal,
@@ -123,6 +124,7 @@ export async function apiStream(path, options = {}) {
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       method,
+      credentials: 'include',
       headers:
         body === undefined
           ? { accept: 'text/event-stream' }

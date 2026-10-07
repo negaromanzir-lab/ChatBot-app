@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { streamAssistantReply, createUserMessage } from '../services/chatService.js';
+import { createConversationMessage } from '../services/conversationService.js';
 
 /**
  * Owns the network lifecycle of a conversation: sending, regenerating, and
@@ -27,7 +28,14 @@ function findLastUserMessageIndex(messages) {
  * @param {Function} params.setMessages Writer for the conversation, accepting an updater.
  * @param {Function} [params.service]
  */
-export function useChatRequest({ messages, setMessages, service = streamAssistantReply } = {}) {
+export function useChatRequest({
+  messages,
+  conversationId,
+  setMessages,
+  createConversation,
+  service = streamAssistantReply,
+  persistMessage = createConversationMessage,
+} = {}) {
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState(null);
   const [wasStopped, setWasStopped] = useState(false);
@@ -45,7 +53,7 @@ export function useChatRequest({ messages, setMessages, service = streamAssistan
   }, []);
 
   const runRequest = useCallback(
-    async (conversation) => {
+    async (conversation, conversationId) => {
       inFlightRef.current = true;
       setIsPending(true);
       setError(null);
@@ -58,6 +66,7 @@ export function useChatRequest({ messages, setMessages, service = streamAssistan
       try {
         const reply = await service({
           messages: conversation,
+          conversationId,
           signal: controller.signal,
           onDelta: (_delta, partialReply) => {
             streamedReplyIdRef.current = partialReply.id;
@@ -69,14 +78,14 @@ export function useChatRequest({ messages, setMessages, service = streamAssistan
               return current.map((message) =>
                 message.id === partialReply.id ? partialReply : message,
               );
-            });
+            }, conversationId);
           },
         });
         setMessages((current) => {
           const existing = current.some((message) => message.id === reply.id);
           if (!existing) return [...current, reply];
           return current.map((message) => (message.id === reply.id ? reply : message));
-        });
+        }, conversationId);
       } catch (caught) {
         if (streamedReplyIdRef.current) {
           const finalStatus =
@@ -89,6 +98,7 @@ export function useChatRequest({ messages, setMessages, service = streamAssistan
                 ? { ...message, status: finalStatus }
                 : message,
             ),
+            conversationId,
           );
         }
 
@@ -119,15 +129,31 @@ export function useChatRequest({ messages, setMessages, service = streamAssistan
       const content = typeof text === 'string' ? text.trim() : '';
       if (!content || inFlightRef.current) return;
 
-      const conversation = [...messages, createUserMessage(content)];
+      inFlightRef.current = true;
+      try {
+        let currentConversationId = conversationId;
+        if (!currentConversationId) {
+          const created = await createConversation();
+          currentConversationId = created.id;
+        }
 
-      // Persist the question immediately, so it survives even if the request
-      // fails or the tab is closed mid-flight.
-      setMessages(conversation);
+        const userMessage = createUserMessage(content);
+        const persistedUserMessage = await persistMessage(currentConversationId, userMessage);
+        const conversation = [...messages, persistedUserMessage.message];
+        setMessages(conversation, currentConversationId);
 
-      await runRequest(conversation);
+        await runRequest(conversation, currentConversationId);
+      } catch (caught) {
+        inFlightRef.current = false;
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : 'Could not save the message. Please try again.',
+        );
+        setIsPending(false);
+      }
     },
-    [messages, setMessages, runRequest],
+    [messages, conversationId, setMessages, runRequest, createConversation, persistMessage],
   );
 
   /**
@@ -143,10 +169,10 @@ export function useChatRequest({ messages, setMessages, service = streamAssistan
     if (lastUserIndex === -1) return;
 
     const conversation = messages.slice(0, lastUserIndex + 1);
-    setMessages(conversation);
+    setMessages(conversation, conversationId);
 
-    await runRequest(conversation);
-  }, [messages, setMessages, runRequest]);
+    await runRequest(conversation, conversationId);
+  }, [messages, conversationId, setMessages, runRequest]);
 
   /** Aborts the in-flight request. Safe to call when nothing is in flight. */
   const stop = useCallback(() => {

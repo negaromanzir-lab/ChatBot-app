@@ -9,13 +9,15 @@
 | 2 | Separate UI from chat orchestration | Complete |
 | 3 | Backend/API foundation (Express, validation, CORS, rate limits, logging) | Complete |
 | 4 | Provider abstraction, timeout/error mapping, and SSE streaming | Complete |
-| 5 | Persistence and authentication | Not started |
+| 5 | PostgreSQL persistence and email/session authentication | In progress |
 | 6 | File uploads | Not started |
 | 7 | Settings and model controls | Not started |
 | 8 | Production hardening | Not started |
 
-Authentication, persistence, and uploads remain deliberately absent. The app is
-runnable and verified at its current checkpoint.
+Uploads and durable user settings remain deliberately absent. Conversations are
+backed by PostgreSQL and scoped to authenticated accounts. Phase 5 implementation
+and automated checks are present, but its live PostgreSQL checkpoint remains
+unverified because no local PostgreSQL server or Docker executable is available.
 
 ## Current baseline
 
@@ -257,7 +259,8 @@ contract (`role: 'assistant'`) inside `chatService.js` only.
 - `middleware/validate.js` replaces `req.body` with the *parsed* value, so
   downstream code only ever sees schema-valid data and unknown keys are stripped.
 - `middleware/rateLimit.js` limits per IP and advertises draft-7 `RateLimit`
-  headers. Per-IP is the correct trade-off only while callers are anonymous.
+  headers. It remains the baseline for authentication and chat; per-account
+  quotas and usage budgets are deferred to production hardening.
 - `config/logger.js` uses pino with `redact` covering `authorization`, `cookie`,
   `apiKey`, and request bodies, so conversation content and credentials stay out
   of log sinks by construction.
@@ -315,11 +318,35 @@ and replace it with the final message rather than adding a duplicate.
 - Real provider path against a mock upstream: conversation forwarded intact,
   bearer token attached server-side.
 
+### Phase 5 — PostgreSQL persistence and authentication (implementation in progress)
+
+- PostgreSQL migrations create users, sessions, conversations, and messages with
+  ownership foreign keys, cascade deletion, constraints, and query indexes.
+- Email/password authentication uses bcrypt hashes and HTTP-only,
+  PostgreSQL-backed sessions. State-changing browser requests enforce allowed
+  origins; authentication and conversation APIs are rate-limited/authenticated.
+- Conversation routes scope every operation to the session user. The chat
+  generation endpoint also requires a session to prevent anonymous use of the
+  configured AI provider.
+- The React sidebar loads, opens, renames, and deletes saved conversations.
+  User messages are stored before generation; the completed assistant response
+  is persisted once after streaming. Existing local history is imported after
+  sign-in and retained until import completion.
+- Automated auth, repository, service, routes, and UI tests cover the API and
+  ownership boundaries. The latest run passed 81 tests, lint, and production
+  build. A real PostgreSQL migration/session/browser round trip is still required
+  before Phase 5 can be marked complete.
+
 ### Known limitations
 
-- No authentication, so rate limiting is per IP and conversations are lost on
-  reload.
+- PostgreSQL, a configured `DATABASE_URL`, and a random `SESSION_SECRET` are
+  required to start the API. Use the development Compose database locally.
+- Rate limiting is still per IP; authenticated per-account quotas remain for
+  production hardening.
 - The default provider is offline and says so. Direct OpenAI replies require
   `AI_PROVIDER=openai` and `OPENAI_API_KEY` on the server.
-- CORS is an origin allowlist, but there is no authentication layer, so it is
-  not an authorization control.
+- Session cookies are HTTP-only and SameSite=Lax; state-changing browser
+  requests also enforce the configured Origin allowlist.
+- If browser-history import is interrupted after some server-side writes, retrying
+  can duplicate the conversations already imported. Add server-side import
+  idempotency before relying on this flow for valuable or large histories.

@@ -9,7 +9,21 @@ import config from '../config/env.js';
  * reachable by load balancers and uptime checks, so it must only expose
  * non-sensitive readiness information.
  */
-export function createApiRouter({ chatController, chatService, rateLimiter } = {}) {
+import createAuthRouter from '../modules/auth/auth.routes.js';
+import createConversationsRouter from '../modules/conversations/conversation.routes.js';
+import requireAuth from '../middleware/requireAuth.js';
+
+export function createApiRouter({
+  chatController,
+  chatService,
+  rateLimiter,
+  authController,
+  authService,
+  conversationController,
+  conversationService,
+  authRateLimiter,
+  chatAuthMiddleware,
+} = {}) {
   const router = Router();
 
   router.get('/health', (_req, res) => {
@@ -21,7 +35,20 @@ export function createApiRouter({ chatController, chatService, rateLimiter } = {
     });
   });
 
-  router.use('/', createChatRouter({ chatController, chatService, rateLimiter }));
+  router.use(
+    '/auth',
+    createAuthRouter({ authController, authService, rateLimiter: authRateLimiter }),
+  );
+  router.use(
+    '/conversations',
+    requireAuth,
+    createConversationsRouter({ conversationController, conversationService }),
+  );
+  router.use(
+    '/',
+    chatAuthMiddleware ?? requireAuth,
+    createChatRouter({ chatController, chatService, rateLimiter, conversationService }),
+  );
 
   return router;
 }

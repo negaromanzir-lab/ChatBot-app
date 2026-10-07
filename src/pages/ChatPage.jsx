@@ -26,7 +26,7 @@ import { useMediaQuery, DESKTOP_QUERY } from '../hooks/useMediaQuery.js';
  * - The sidebar drawer is pure chrome: it closes on selection, on backdrop or
  *   Escape, and whenever the viewport grows past the breakpoint.
  */
-export function ChatPage() {
+export function ChatPage({ user, onSignOut }) {
   const { preference, setPreference, theme, toggleTheme } = useTheme();
   const { preferences, updatePreference } = usePreferences();
 
@@ -38,8 +38,12 @@ export function ChatPage() {
     selectConversation,
     newChat,
     deleteConversation,
+    renameConversation,
     removeAllConversations,
     setActiveMessages,
+    createConversation,
+    isLoading: conversationsLoading,
+    error: conversationError,
   } = useConversations();
 
   const {
@@ -52,7 +56,12 @@ export function ChatPage() {
     stop,
     clearError,
     dismissStoppedNotice,
-  } = useChatRequest({ messages, setMessages: setActiveMessages });
+  } = useChatRequest({
+    messages,
+    conversationId: activeId,
+    setMessages: setActiveMessages,
+    createConversation,
+  });
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -92,8 +101,11 @@ export function ChatPage() {
 
     if (!confirmed) return;
 
-    removeAllConversations();
-    setIsSettingsOpen(false);
+    removeAllConversations().then(() => setIsSettingsOpen(false));
+  }
+
+  if (conversationsLoading) {
+    return <main className="app-loading" role="status">Loading your conversations…</main>;
   }
 
   const hasMessages = messages.length > 0;
@@ -106,10 +118,12 @@ export function ChatPage() {
         <Sidebar
           conversations={conversations}
           activeId={activeId}
-          displayName={preferences.displayName}
+          displayName={user.email}
           onSelect={handleSelectConversation}
           onNewChat={handleNewChat}
           onDelete={deleteConversation}
+          onRename={renameConversation}
+          onSignOut={onSignOut}
           onClose={() => setIsSidebarOpen(false)}
           onOpenSettings={() => setIsSettingsOpen(true)}
         />
@@ -127,6 +141,12 @@ export function ChatPage() {
         <MessageList messages={messages} isPending={isPending} onRegenerate={regenerate} />
       ) : (
         <WelcomeScreen onSuggest={sendMessage} />
+      )}
+
+      {conversationError && (
+        <div className="composer__notice composer__notice--error" role="alert">
+          {conversationError}
+        </div>
       )}
 
       <Composer

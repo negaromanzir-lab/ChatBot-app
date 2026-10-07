@@ -7,6 +7,8 @@ import config from './config/env.js';
 import logger from './config/logger.js';
 import createApiRouter from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { createSessionMiddleware, createSessionStore } from './db/sessionStore.js';
+import { verifyOrigin } from './middleware/verifyOrigin.js';
 
 /**
  * Builds the Express application without starting a listener.
@@ -57,6 +59,7 @@ export function createApp(options = {}) {
   // the read and the request does not spam the error log with 500s.
   app.use(
     cors({
+      credentials: true,
       origin(origin, callback) {
         // Same-origin, curl, and server-to-server calls send no Origin header.
         if (!origin) return callback(null, true);
@@ -64,13 +67,23 @@ export function createApp(options = {}) {
         logger.warn({ origin }, 'Request blocked by CORS origin policy');
         return callback(null, false);
       },
-      methods: ['GET', 'POST'],
+      methods: ['GET', 'POST', 'PATCH', 'DELETE'],
       maxAge: 600,
     }),
   );
 
   app.use(express.json({ limit: config.bodyLimit }));
 
+  const sessionStore =
+    options.sessionStore ??
+    (config.env === 'test' ? undefined : createSessionStore());
+  app.use(
+    createSessionMiddleware({
+      store: sessionStore,
+      secret: options.sessionSecret,
+    }),
+  );
+  app.use(verifyOrigin);
   app.use('/api', createApiRouter(options));
 
   app.use(notFoundHandler);

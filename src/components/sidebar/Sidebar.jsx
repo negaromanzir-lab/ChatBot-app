@@ -43,6 +43,8 @@ export function Sidebar({
   onSelect,
   onNewChat,
   onDelete,
+  onRename,
+  onSignOut,
   onClose,
   onOpenSettings,
 }) {
@@ -101,6 +103,17 @@ export function Sidebar({
                       </button>
 
                       <IconButton
+                        icon="pencil"
+                        label={`Rename conversation: ${conversation.title}`}
+                        size="sm"
+                        className="sidebar__row-rename"
+                        onClick={() => {
+                          const title = window.prompt('Rename conversation', conversation.title);
+                          if (title?.trim()) onRename(conversation.id, title);
+                        }}
+                      />
+
+                      <IconButton
                         icon="trash"
                         label={`Delete conversation: ${conversation.title}`}
                         size="sm"
@@ -122,6 +135,9 @@ export function Sidebar({
           <span className="sidebar__profile-name">{displayName}</span>
         </div>
         <IconButton icon="settings" label="Settings" onClick={onOpenSettings} />
+        <button type="button" className="sidebar__sign-out" onClick={onSignOut}>
+          Sign out
+        </button>
       </div>
     </aside>
   );
