@@ -13,7 +13,8 @@ const schema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   CORS_ORIGINS: z.string().default('http://localhost:5173'),
   DATABASE_URL: z.string().min(1).optional(),
-  SESSION_SECRET: z.string().min(32).optional(),
+  CLERK_SECRET_KEY: z.string().startsWith('sk_').optional(),
+  CLERK_PUBLISHABLE_KEY: z.string().startsWith('pk_').optional(),
   TRUST_PROXY: booleanFromString,
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
@@ -43,8 +44,8 @@ if (raw.NODE_ENV !== 'test' && !raw.DATABASE_URL) {
   process.exit(1);
 }
 
-if (raw.NODE_ENV !== 'test' && (!raw.SESSION_SECRET || raw.SESSION_SECRET.length < 32)) {
-  process.stderr.write('SESSION_SECRET must be set to a random value of at least 32 characters.\n');
+if (raw.NODE_ENV !== 'test' && (!raw.CLERK_SECRET_KEY || !raw.CLERK_PUBLISHABLE_KEY)) {
+  process.stderr.write('CLERK_SECRET_KEY and CLERK_PUBLISHABLE_KEY are required.\n');
   process.exit(1);
 }
 if (raw.NODE_ENV === 'production') {
@@ -81,7 +82,10 @@ export const config = Object.freeze({
   logLevel: raw.NODE_ENV === 'test' ? 'silent' : raw.LOG_LEVEL,
   corsOrigins: raw.CORS_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean),
   databaseUrl: raw.DATABASE_URL,
-  sessionSecret: raw.SESSION_SECRET,
+  clerk: Object.freeze({
+    secretKey: raw.CLERK_SECRET_KEY,
+    publishableKey: raw.CLERK_PUBLISHABLE_KEY,
+  }),
   trustProxy: raw.TRUST_PROXY,
   rateLimit: { windowMs: raw.RATE_LIMIT_WINDOW_MS, max: raw.RATE_LIMIT_MAX },
   bodyLimit: raw.BODY_LIMIT,

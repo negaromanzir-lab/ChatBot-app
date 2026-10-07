@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import App from './App';
 import * as chatService from './services/chatService.js';
-import * as authService from './services/authService.js';
 import * as conversationService from './services/conversationService.js';
 import * as authHook from './hooks/useAuth.js';
 import { clearConversations } from './services/conversationStorage.js';
@@ -27,14 +26,10 @@ vi.mock('./services/chatService.js', async (importOriginal) => ({
   streamAssistantReply: vi.fn(),
 }));
 
-vi.mock('./services/authService.js', () => ({
-  getCurrentUser: vi.fn().mockResolvedValue({
-    id: 'test-user',
-    email: 'test@example.com',
-  }),
-  signIn: vi.fn(),
-  signUp: vi.fn(),
-  signOut: vi.fn(),
+vi.mock('@clerk/react', () => ({
+  UserButton: () => <button type="button" aria-label="User profile and account menu" />,
+  SignIn: () => <div data-testid="clerk-sign-in" />,
+  SignUp: () => <div data-testid="clerk-sign-up" />,
 }));
 
 vi.mock('./hooks/useAuth.js', () => ({
@@ -108,17 +103,9 @@ beforeEach(() => {
   clearConversations();
   removeKey(THEME_STORAGE_KEY);
   removeKey('chatbot.preferences.v1');
-  vi.mocked(authService.getCurrentUser).mockResolvedValue({
-    id: 'test-user',
-    email: 'test@example.com',
-  });
   vi.mocked(authHook.useAuth).mockReturnValue({
-    user: { id: 'test-user', email: 'test@example.com' },
+    user: { id: 'test-user', email: 'test@example.com', fullName: 'Test User' },
     isLoading: false,
-    error: null,
-    signIn: vi.fn(),
-    signUp: vi.fn(),
-    signOut: vi.fn(),
   });
   vi.mocked(conversationService.importLocalHistory).mockResolvedValue(null);
   vi.mocked(conversationService.listConversations).mockResolvedValue([]);
@@ -144,6 +131,18 @@ beforeEach(() => {
 });
 
 describe('App', () => {
+  it('uses Clerk sign-in and sign-up components for unauthenticated users', async () => {
+    vi.mocked(authHook.useAuth).mockReturnValue({
+      user: null,
+      isLoading: false,
+    });
+    render(<App />);
+
+    expect(screen.getByTestId('clerk-sign-in')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+    expect(screen.getByTestId('clerk-sign-up')).toBeInTheDocument();
+  });
+
   it('shows the welcome screen when there is no conversation', async () => {
     render(<App />);
 
@@ -156,7 +155,7 @@ describe('App', () => {
   it('starts a conversation from a welcome-screen suggestion', async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole('button', { name: /weekend trip/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /weekend trip/i }));
 
     expect(await screen.findByText('A backend reply')).toBeInTheDocument();
     expect(chatService.streamAssistantReply).toHaveBeenCalledTimes(1);

@@ -26,7 +26,7 @@ import { useMediaQuery, DESKTOP_QUERY } from '../hooks/useMediaQuery.js';
  * - The sidebar drawer is pure chrome: it closes on selection, on backdrop or
  *   Escape, and whenever the viewport grows past the breakpoint.
  */
-export function ChatPage({ user, onSignOut }) {
+export function ChatPage({ user }) {
   const { preference, setPreference, theme, toggleTheme } = useTheme();
   const { preferences, updatePreference } = usePreferences();
 
@@ -44,7 +44,7 @@ export function ChatPage({ user, onSignOut }) {
     createConversation,
     isLoading: conversationsLoading,
     error: conversationError,
-  } = useConversations();
+  } = useConversations(user);
 
   const {
     isPending,
@@ -118,12 +118,11 @@ export function ChatPage({ user, onSignOut }) {
         <Sidebar
           conversations={conversations}
           activeId={activeId}
-          displayName={user.email}
+          displayName={user.fullName || user.email}
           onSelect={handleSelectConversation}
           onNewChat={handleNewChat}
           onDelete={deleteConversation}
           onRename={renameConversation}
-          onSignOut={onSignOut}
           onClose={() => setIsSidebarOpen(false)}
           onOpenSettings={() => setIsSettingsOpen(true)}
         />

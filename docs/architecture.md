@@ -9,15 +9,15 @@
 | 2 | Separate UI from chat orchestration | Complete |
 | 3 | Backend/API foundation (Express, validation, CORS, rate limits, logging) | Complete |
 | 4 | Provider abstraction, timeout/error mapping, and SSE streaming | Complete |
-| 5 | PostgreSQL persistence and email/session authentication | In progress |
+| 5 | PostgreSQL persistence and Clerk authentication | In progress |
 | 6 | File uploads | Not started |
 | 7 | Settings and model controls | Not started |
 | 8 | Production hardening | Not started |
 
 Uploads and durable user settings remain deliberately absent. Conversations are
-backed by PostgreSQL and scoped to authenticated accounts. Phase 5 implementation
-and automated checks are present, but its live PostgreSQL checkpoint remains
-unverified because no local PostgreSQL server or Docker executable is available.
+backed by PostgreSQL and scoped to authenticated accounts. Clerk integration is
+implemented, but the live database checkpoint is blocked because the configured
+PostgreSQL credentials are rejected by the server.
 
 ## Current baseline
 
@@ -318,34 +318,40 @@ and replace it with the final message rather than adding a duplicate.
 - Real provider path against a mock upstream: conversation forwarded intact,
   bearer token attached server-side.
 
-### Phase 5 — PostgreSQL persistence and authentication (implementation in progress)
+### Phase 5 — PostgreSQL persistence and Clerk authentication (implementation in progress)
 
-- PostgreSQL migrations create users, sessions, conversations, and messages with
+- PostgreSQL migrations create users, conversations, and messages with
   ownership foreign keys, cascade deletion, constraints, and query indexes.
-- Email/password authentication uses bcrypt hashes and HTTP-only,
-  PostgreSQL-backed sessions. State-changing browser requests enforce allowed
-  origins; authentication and conversation APIs are rate-limited/authenticated.
-- Conversation routes scope every operation to the session user. The chat
-  generation endpoint also requires a session to prevent anonymous use of the
-  configured AI provider.
+- Clerk handles sign-up, sign-in, profile, and sign-out. Express verifies bearer
+  session tokens through Clerk middleware before protected chat or conversation
+  routes run. Only the verified identity is used to resolve the local user.
+- First access synchronizes the Clerk identity to PostgreSQL. A verified primary
+  email can link the matching legacy account; an email linked to another Clerk
+  identity is rejected. The browser cannot supply the conversation owner ID.
+- Conversation routes scope every operation to the synchronized database user.
+  The chat generation endpoint also requires a verified identity to prevent
+  anonymous use of the configured AI provider.
 - The React sidebar loads, opens, renames, and deletes saved conversations.
   User messages are stored before generation; the completed assistant response
   is persisted once after streaming. Existing local history is imported after
   sign-in and retained until import completion.
-- Automated auth, repository, service, routes, and UI tests cover the API and
-  ownership boundaries. The latest run passed 81 tests, lint, and production
-  build. A real PostgreSQL migration/session/browser round trip is still required
-  before Phase 5 can be marked complete.
+- Automated auth, repository, service, route, and UI tests cover Clerk identity
+  sync, verified-email linking, and ownership boundaries. A live PostgreSQL
+  migration and account-linking round trip is still required before Phase 5 is
+  complete.
 
 ### Known limitations
 
-- PostgreSQL, a configured `DATABASE_URL`, and a random `SESSION_SECRET` are
-  required to start the API. Use the development Compose database locally.
+- PostgreSQL, a valid `DATABASE_URL`, and Clerk keys are required to start the API.
+  Use the development Compose database locally and configure Clerk keys from its dashboard.
+- `npm run db:migrate` currently fails against the configured local PostgreSQL
+  endpoint with password authentication failure. Correct the local database
+  credentials before applying migrations 001 and 002.
 - Rate limiting is still per IP; authenticated per-account quotas remain for
   production hardening.
 - The default provider is offline and says so. Direct OpenAI replies require
   `AI_PROVIDER=openai` and `OPENAI_API_KEY` on the server.
-- Session cookies are HTTP-only and SameSite=Lax; state-changing browser
+- Clerk session tokens are verified server-side, and state-changing browser
   requests also enforce the configured Origin allowlist.
 - If browser-history import is interrupted after some server-side writes, retrying
   can duplicate the conversations already imported. Add server-side import

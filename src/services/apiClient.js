@@ -26,6 +26,28 @@ export class ApiClientError extends Error {
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '');
 const DEFAULT_TIMEOUT_MS = 30_000;
+let getAuthToken = async () => null;
+
+export function setAuthTokenProvider(provider) {
+  getAuthToken = provider ?? (async () => null);
+}
+
+async function getRequestHeaders(body, acceptsStream = false) {
+  let token;
+  try {
+    token = await getAuthToken();
+  } catch (cause) {
+    throw new ApiClientError('Could not retrieve your sign-in token. Please sign in again.', {
+      code: 'AUTH_TOKEN_ERROR',
+      cause,
+    });
+  }
+  return {
+    ...(acceptsStream ? { accept: 'text/event-stream' } : {}),
+    ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
+  };
+}
 
 /**
  * @param {string} path   Path relative to the API base, e.g. '/chat'
@@ -50,14 +72,16 @@ export async function apiRequest(path, options = {}) {
 
   let response;
   try {
+    const headers = await getRequestHeaders(body);
     response = await fetch(`${API_BASE_URL}${path}`, {
       method,
       credentials: 'include',
-      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: combinedSignal,
     });
   } catch (error) {
+    if (error instanceof ApiClientError) throw error;
     if (signal?.aborted) {
       throw new ApiClientError('Request cancelled.', { code: 'CANCELLED' });
     }
@@ -122,20 +146,16 @@ export async function apiStream(path, options = {}) {
 
   let response;
   try {
+    const headers = await getRequestHeaders(body, true);
     response = await fetch(`${API_BASE_URL}${path}`, {
       method,
       credentials: 'include',
-      headers:
-        body === undefined
-          ? { accept: 'text/event-stream' }
-          : {
-              accept: 'text/event-stream',
-              'content-type': 'application/json',
-            },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: combinedSignal,
     });
   } catch (error) {
+    if (error instanceof ApiClientError) throw error;
     if (signal?.aborted) {
       throw new ApiClientError('Request cancelled.', { code: 'CANCELLED' });
     }

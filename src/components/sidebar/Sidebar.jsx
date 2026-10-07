@@ -1,7 +1,7 @@
 import { Button, IconButton } from '../ui/Button.jsx';
 import { Icon } from '../ui/Icon.jsx';
-import { Avatar } from '../message/Avatar.jsx';
 import { formatRelativeDay, formatRelativeTime } from '../../utils/date.js';
+import { UserButton } from '@clerk/react';
 import './Sidebar.css';
 
 /**
@@ -44,7 +44,6 @@ export function Sidebar({
   onNewChat,
   onDelete,
   onRename,
-  onSignOut,
   onClose,
   onOpenSettings,
 }) {
@@ -131,13 +130,10 @@ export function Sidebar({
 
       <div className="sidebar__footer">
         <div className="sidebar__profile" title={displayName}>
-          <Avatar sender="user" size="sm" />
+          <UserButton />
           <span className="sidebar__profile-name">{displayName}</span>
         </div>
         <IconButton icon="settings" label="Settings" onClick={onOpenSettings} />
-        <button type="button" className="sidebar__sign-out" onClick={onSignOut}>
-          Sign out
-        </button>
       </div>
     </aside>
   );

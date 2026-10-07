@@ -18,8 +18,10 @@ npm run db:migrate
 npm run dev
 ```
 
-Generate a fresh `SESSION_SECRET` in `.env` using the command documented there before
-starting the server. PostgreSQL is required for account and conversation storage.
+Add Clerk's publishable and secret keys from your Clerk Dashboard to `.env`.
+PostgreSQL is required for account and conversation storage.
+Configure email sign-up with email verification in Clerk; the backend only creates
+or links accounts from Clerk-verified primary email addresses.
 
 `npm run dev` starts both processes together:
 
@@ -32,16 +34,23 @@ Run them individually with `npm run dev:client` and `npm run dev:server`.
 
 ### Accounts and saved conversations
 
-Create an account or sign in with an email and a password of at least 12 characters.
-Passwords are stored as bcrypt hashes; the server issues an HTTP-only, SameSite session
-cookie stored in PostgreSQL. Conversation APIs require authentication and scope all reads
-and writes by the signed-in user. `POST /api/chat` also requires an authenticated
-session so anonymous callers cannot use the configured provider key. Existing local
+Sign-up, sign-in, profile, and sign-out are provided by Clerk. The browser sends its
+Clerk session token as a bearer token; the Express API verifies it using Clerk's
+server SDK. The backend derives account identity only from the verified token and
+synchronizes a local user row using Clerk's verified primary email. A matching
+legacy email account is linked to the Clerk ID, preserving its conversations.
+Conversation APIs and `POST /api/chat` require authentication and scope all access
+to that local user. User IDs supplied in request bodies are ignored. Existing local
 browser history is imported once after sign-in and cleared only after a successful import.
 
-The migration creates `users`, `sessions`, `conversations`, and `messages`, with cascade
-foreign keys, constraints, and indexes for conversation history and ordered message lookup.
+The migrations create `users`, `conversations`, and `messages`, with cascade foreign
+keys, constraints, and indexes for conversation history and ordered message lookup.
+The Clerk migration adds a unique Clerk user ID and removes the obsolete session table.
 AI provider keys remain server environment variables and are never stored in the database.
+
+Set `VITE_CLERK_PUBLISHABLE_KEY`, `CLERK_PUBLISHABLE_KEY`, and `CLERK_SECRET_KEY`
+from your Clerk Dashboard in `.env`. The `VITE_` key is public; never expose the
+server-only `CLERK_SECRET_KEY` to the frontend.
 
 | Method | Path | Purpose |
 | --- | --- | --- |

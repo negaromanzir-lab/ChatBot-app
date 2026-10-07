@@ -52,6 +52,11 @@ async function startServer({
     // Rate limiting has its own tests; disabling it elsewhere keeps assertions
     // independent of the shared request counter.
     rateLimiter: rateLimiter ?? passThroughLimiter,
+    authResolver: (req) => req.auth ?? {},
+    clerkAuthMiddleware: (req, _res, next) => {
+      req.auth = {};
+      next();
+    },
     ...(enforceChatAuth ? {} : { chatAuthMiddleware: passThroughAuth }),
   });
 
@@ -90,7 +95,7 @@ afterAll(async () => {
 });
 
 describe('POST /api/chat', () => {
-  it('requires an authenticated session by default', async () => {
+  it('requires a verified Clerk identity by default', async () => {
     await startServer({ enforceChatAuth: true });
 
     const response = await postChat(validBody);
