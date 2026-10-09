@@ -7,12 +7,15 @@
 
 import { readJson, writeJson } from './localStorage.js';
 
-const STORAGE_KEY = 'chatbot.preferences.v1';
+const STORAGE_KEY_PREFIX = 'chatbot.preferences.v1';
 
 export const DEFAULT_DISPLAY_NAME = 'You';
 
-export function loadPreferences() {
-  const stored = readJson(STORAGE_KEY, {});
+export function loadPreferences(userId) {
+  const storageKey = userId
+    ? `${STORAGE_KEY_PREFIX}.${encodeURIComponent(userId)}`
+    : STORAGE_KEY_PREFIX;
+  const stored = readJson(storageKey, {});
 
   const displayName =
     typeof stored?.displayName === 'string' && stored.displayName.trim()
@@ -24,12 +27,20 @@ export function loadPreferences() {
       ? stored.selectedModelId
       : null;
 
-  return { displayName, selectedModelId };
+  const theme = ['system', 'light', 'dark'].includes(stored?.theme)
+    ? stored.theme
+    : 'system';
+
+  return { displayName, selectedModelId, theme };
 }
 
-export function savePreferences({ displayName, selectedModelId }) {
-  writeJson(STORAGE_KEY, {
+export function savePreferences({ displayName, selectedModelId, theme }, userId) {
+  const storageKey = userId
+    ? `${STORAGE_KEY_PREFIX}.${encodeURIComponent(userId)}`
+    : STORAGE_KEY_PREFIX;
+  writeJson(storageKey, {
     displayName,
+    theme,
     ...(selectedModelId ? { selectedModelId } : {}),
   });
 }

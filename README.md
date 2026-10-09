@@ -37,6 +37,11 @@ labels; the backend resolves each ID to its provider, vendor model, and key.
 
 Run them individually with `npm run dev:client` and `npm run dev:server`.
 
+The local database uses pgvector. On an existing installation, run
+`docker compose up -d db` to recreate the database container with the
+pgvector-enabled PostgreSQL image while retaining the named data volume. Do
+not use `docker compose down -v`. Then run `npm run db:migrate`.
+
 ### Accounts and saved conversations
 
 Sign-up, sign-in, profile, and sign-out are provided by Clerk. The browser sends its
@@ -52,6 +57,8 @@ The migrations create `users`, `conversations`, and `messages`, with cascade for
 keys, constraints, and indexes for conversation history and ordered message lookup.
 The Clerk migration adds a unique Clerk user ID and removes the obsolete session table.
 AI provider keys remain server environment variables and are never stored in the database.
+PostgreSQL uses the `pgvector/pgvector` image locally; production PostgreSQL must
+have the `vector` extension available before migrations run.
 
 Set `VITE_CLERK_PUBLISHABLE_KEY`, `CLERK_PUBLISHABLE_KEY`, and `CLERK_SECRET_KEY`
 from your Clerk Dashboard in `.env`. The `VITE_` key is public; never expose the
@@ -90,8 +97,28 @@ sent only server-to-provider when the selected model advertises vision support.
 The provider adapters translate the same normalized text/image input to their
 own APIs. The upload path never executes uploaded files. Files are still
 available to download; removing a conversation also removes its private files.
-Extraction is stored separately from metadata and provider request formatting,
-leaving room for later chunking, embeddings, and RAG retrieval.
+
+### Document search (RAG)
+
+Text-based uploads are chunked and embedded on the server using OpenAI
+`text-embedding-3-small` embeddings, then stored in PostgreSQL with pgvector.
+This uses `OPENAI_API_KEY` even when chat answers use Gemini or Claude; the key
+is server-only. Without it, uploads remain available but document search reports
+that indexing is not configured rather than sending the complete document to a
+chat model.
+
+When a question is sent with conversation files attached, the API embeds the
+question and retrieves only the top matching chunks from those files, scoped to
+the authenticated user and active conversation. Chunks below the configured
+similarity threshold are excluded. Assistant replies include a Sources list
+with filename and Markdown heading or PDF page references when available.
+Images continue through the selected vision model and are not vector indexed.
+
+`RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP`, `RAG_TOP_K`, and
+`RAG_SIMILARITY_THRESHOLD` tune retrieval. Defaults are 1200 characters, 200
+characters, 5 chunks, and 0.25 cosine similarity. Migration 007 enables
+pgvector and creates `documents`, `document_chunks`, and `embeddings`; existing
+installations must apply it with `npm run db:migrate`.
 
 ### Enabling a real AI provider
 
@@ -182,6 +209,18 @@ Response:
 Returns `{ status, uptimeSeconds, provider, timestamp }`. Deliberately exposes no
 credentials.
 
+### `GET /api/health/ready`
+
+Checks database readiness for deployment/load-balancer probes. Returns 200 when
+ready and a generic 503 response when the database is unavailable; diagnostic
+details stay in server logs.
+
+Valid chat requests also consume the configured per-user daily quota
+(`CHAT_DAILY_QUOTA`, default 100). Quota responses include
+`X-Chat-Quota-Limit`, `X-Chat-Quota-Remaining`, and `X-Chat-Quota-Reset`;
+exhausted requests return 429 with `Retry-After`. Each valid request reserves a
+quota unit before provider invocation, including requests that later fail.
+
 ### Errors
 
 Every failure uses one envelope, so the client can branch on `code` rather than parsing prose:
@@ -204,6 +243,7 @@ Every failure uses one envelope, so the client can branch on `code` rather than 
 | 404 | `NOT_FOUND` | Unknown route |
 | 413 | `PAYLOAD_TOO_LARGE` | Body exceeded `BODY_LIMIT` |
 | 429 | `RATE_LIMIT_EXCEEDED` | Rate limit hit |
+| 429 | `CHAT_QUOTA_EXCEEDED` | Per-user daily chat quota hit |
 | 502 | `AI_PROVIDER_*` | Provider rejected the request or returned garbage |
 | 503 | `AI_PROVIDER_UNAVAILABLE` / `AI_PROVIDER_NOT_CONFIGURED` | Provider down or unconfigured |
 | 504 | `AI_PROVIDER_TIMEOUT` | Provider exceeded `AI_REQUEST_TIMEOUT_MS` |
@@ -259,8 +299,8 @@ from leaking into components.
 On the server, a request flows:
 
 ```
-request → pino-http → helmet → cors → express.json → rate limit
-        → validate (zod) → controller → chat.service → provider adapter → upstream
+request → pino-http → helmet → cors → express.json → auth → rate limit
+        → validate (zod) → daily account quota → controller → provider adapter
         → errorHandler (single response envelope)
 ```
 
@@ -278,15 +318,21 @@ future log statement cannot leak a credential or conversation content.
 
 ## Current status
 
-Working: full round trip through the API, request validation, rate limiting, structured
-logging, CORS, graceful shutdown, and a provider abstraction with real timeout and error
-mapping.
+Working: full round trip through the API, request validation, per-IP throttling,
+PostgreSQL-backed per-user daily chat quotas, security headers, structured
+logging, CORS, graceful shutdown, database readiness checks, and a provider
+abstraction with real timeout and error mapping.
 
-Not implemented yet: file uploads and durable user settings. The offline `local` provider
-is a development stand-in, not a model.
+File uploads are stored privately and associated with authenticated users and
+conversations. Per-user theme, display-name, and selected-model preferences are
+stored by the authenticated `/api/settings` API. Document retrieval uses
+user-scoped pgvector search and appends source references to relevant answers.
+The offline `local` provider is a development stand-in, not a model.
 
 The phased migration plan and its rationale are in
 [docs/architecture.md](./docs/architecture.md).
+Production deployment, database and private-upload backup/restore procedures
+are in [docs/operations.md](./docs/operations.md).
 
 ## License
 

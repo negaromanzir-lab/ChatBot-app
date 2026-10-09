@@ -142,6 +142,16 @@ export function Composer({
                 <Icon name="attach" size={14} />
                 <span>{upload.name}</span>
               </button>
+              {upload.indexStatus === 'pending' && (
+                <span className="composer__upload-status" role="status">
+                  Search setup required
+                </span>
+              )}
+              {upload.indexStatus === 'failed' && (
+                <span className="composer__upload-status" role="status">
+                  Search indexing failed
+                </span>
+              )}
               <IconButton
                 icon="close"
                 label={`Remove ${upload.name}`}

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import validate from '../middleware/validate.js';
 import { createChatRateLimiter } from '../middleware/rateLimit.js';
+import { createChatQuotaMiddleware } from '../middleware/chatQuota.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import config from '../config/env.js';
 import { createChatController } from '../controllers/chat.controller.js';
@@ -42,12 +43,24 @@ export const chatRequestSchema = z.object({
   }
 });
 
-export function createChatRouter({ chatController, chatService, rateLimiter } = {}) {
+export function createChatRouter({
+  chatController,
+  chatService,
+  rateLimiter,
+  chatQuotaMiddleware,
+} = {}) {
   const router = Router();
   const controller = chatController ?? createChatController({ chatService });
   const limiter = rateLimiter ?? createChatRateLimiter();
+  const quotaLimiter = chatQuotaMiddleware ?? createChatQuotaMiddleware();
 
-  router.post('/chat', limiter, validate({ body: chatRequestSchema }), asyncHandler(controller.sendMessage));
+  router.post(
+    '/chat',
+    limiter,
+    validate({ body: chatRequestSchema }),
+    quotaLimiter,
+    asyncHandler(controller.sendMessage),
+  );
 
   return router;
 }

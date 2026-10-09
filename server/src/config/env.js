@@ -24,6 +24,7 @@ const schema = z.object({
   TRUST_PROXY: booleanFromString,
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60000),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
+  CHAT_DAILY_QUOTA: z.coerce.number().int().positive().max(100000).default(100),
   BODY_LIMIT: z.string().default('100kb'),
   AI_PROVIDER: z.enum(['local', 'openai', 'openai-compatible', 'openai-direct']).default('local'),
   AI_PROVIDER_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
@@ -38,13 +39,24 @@ const schema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().optional(),
   OPENAI_MODEL_SUPPORTS_VISION: booleanWithDefault(true),
+  RAG_EMBEDDING_MODEL: z.string().min(1).default('text-embedding-3-small'),
+  RAG_CHUNK_SIZE: z.coerce.number().int().min(200).max(10000).default(1200),
+  RAG_CHUNK_OVERLAP: z.coerce.number().int().min(0).max(2000).default(200),
+  RAG_TOP_K: z.coerce.number().int().min(1).max(20).default(5),
+  RAG_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.25),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
   ANTHROPIC_API_KEY: z.string().optional(),
   CLAUDE_MODEL: z.string().default('claude-3-5-sonnet-latest'),
   MAX_MESSAGES_PER_REQUEST: z.coerce.number().int().positive().default(50),
   MAX_CONTENT_LENGTH: z.coerce.number().int().positive().default(4000),
-});
+}).refine(
+  (values) => values.RAG_CHUNK_OVERLAP < values.RAG_CHUNK_SIZE,
+  {
+    path: ['RAG_CHUNK_OVERLAP'],
+    message: 'RAG_CHUNK_OVERLAP must be smaller than RAG_CHUNK_SIZE.',
+  },
+);
 
 const parsed = schema.safeParse(process.env);
 if (!parsed.success) {
@@ -117,6 +129,16 @@ export const config = Object.freeze({
   }),
   trustProxy: raw.TRUST_PROXY,
   rateLimit: { windowMs: raw.RATE_LIMIT_WINDOW_MS, max: raw.RATE_LIMIT_MAX },
+  usage: Object.freeze({ dailyChatQuota: raw.CHAT_DAILY_QUOTA }),
+  rag: Object.freeze({
+    embeddingModel: raw.RAG_EMBEDDING_MODEL,
+    embeddingApiKey: raw.OPENAI_API_KEY,
+    embeddingDimensions: 1536,
+    chunkSize: raw.RAG_CHUNK_SIZE,
+    chunkOverlap: raw.RAG_CHUNK_OVERLAP,
+    topK: raw.RAG_TOP_K,
+    similarityThreshold: raw.RAG_SIMILARITY_THRESHOLD,
+  }),
   bodyLimit: raw.BODY_LIMIT,
   ai: Object.freeze({
     provider: raw.AI_PROVIDER,

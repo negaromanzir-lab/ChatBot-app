@@ -89,6 +89,57 @@ describe('file upload service', () => {
     });
   });
 
+  it('indexes extracted text after persisting the private upload', async () => {
+    const { repository, storage } = createFixtures();
+    const documentIndexer = {
+      indexDocument: vi.fn().mockResolvedValue({ status: 'ready' }),
+    };
+    const service = createUploadService({
+      repository,
+      storage,
+      documentIndexer,
+    });
+    const text = Buffer.from('Evidence for the semantic index.');
+
+    await expect(service.upload('owner-id', 'conversation-id', {
+      originalname: 'evidence.txt',
+      mimetype: 'text/plain',
+      size: text.length,
+      buffer: text,
+    })).resolves.toMatchObject({ indexStatus: 'ready' });
+
+    expect(documentIndexer.indexDocument).toHaveBeenCalledWith({
+      userId: 'owner-id',
+      conversationId: 'conversation-id',
+      uploadId: 'upload-record-id',
+      text: 'Evidence for the semantic index.',
+    });
+  });
+
+  it('removes the upload row and private bytes when document indexing fails', async () => {
+    const { repository, storage } = createFixtures();
+    const documentIndexer = {
+      indexDocument: vi.fn().mockRejectedValue(new Error('embedding request failed')),
+    };
+    const service = createUploadService({ repository, storage, documentIndexer });
+    const text = Buffer.from('Text that could not be indexed.');
+
+    await expect(service.upload('owner-id', 'conversation-id', {
+      originalname: 'unindexed.txt',
+      mimetype: 'text/plain',
+      size: text.length,
+      buffer: text,
+    })).rejects.toThrow('embedding request failed');
+
+    const [storageKey] = storage.write.mock.calls[0];
+    expect(repository.delete).toHaveBeenCalledWith(
+      'owner-id',
+      'conversation-id',
+      storageKey,
+    );
+    expect(storage.delete).toHaveBeenCalledWith(storageKey);
+  });
+
   it('extracts text from TXT and DOCX documents without executing them', async () => {
     const { repository, storage } = createFixtures();
     const service = createUploadService({ repository, storage });

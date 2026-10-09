@@ -4,6 +4,7 @@ import { createApp } from '../src/app.js';
 import { createChatService } from '../src/services/ai/chat.service.js';
 import { createChatRateLimiter } from '../src/middleware/rateLimit.js';
 import { default as ApiError } from '../src/utils/ApiError.js';
+import { createChatQuotaMiddleware } from '../src/middleware/chatQuota.js';
 
 /**
  * Route-level tests for POST /api/chat.
@@ -41,6 +42,9 @@ async function startServer({
   rateLimiter,
   enforceChatAuth = false,
   allowAuthenticatedRoutes = false,
+  chatQuotaMiddleware,
+  chatAuthMiddleware,
+  readinessCheck,
 } = {}) {
   if (server) {
     await new Promise((resolve) => server.close(resolve));
@@ -53,13 +57,18 @@ async function startServer({
     // Rate limiting has its own tests; disabling it elsewhere keeps assertions
     // independent of the shared request counter.
     rateLimiter: rateLimiter ?? passThroughLimiter,
+    chatQuotaMiddleware: passThroughLimiter,
     authResolver: (req) => req.auth ?? {},
     ...(allowAuthenticatedRoutes ? { requireAuthMiddleware: passThroughAuth } : {}),
+    ...(chatQuotaMiddleware ? { chatQuotaMiddleware } : {}),
+    ...(readinessCheck ? { readinessCheck } : {}),
     clerkAuthMiddleware: (req, _res, next) => {
       req.auth = {};
       next();
     },
-    ...(enforceChatAuth ? {} : { chatAuthMiddleware: passThroughAuth }),
+    ...(chatAuthMiddleware
+      ? { chatAuthMiddleware }
+      : enforceChatAuth ? {} : { chatAuthMiddleware: passThroughAuth }),
   });
 
   server = app.listen(0);
@@ -487,15 +496,70 @@ describe('POST /api/chat', () => {
       expect(response.headers.get('ratelimit')).toContain('limit=5');
     });
 
-    it('does not consume the budget on a rejected request', async () => {
+    it('counts valid generation attempts toward the request budget', async () => {
       await startServer({
         rateLimiter: createChatRateLimiter({ windowMs: 60_000, limit: 1 }),
       });
 
       expect((await postChat(validBody)).status).toBe(200);
-      // Second call is limited even though it is invalid, proving the limiter
-      // counts attempts rather than successful generations.
       expect((await postChat(validBody)).status).toBe(429);
+    });
+
+    it('rejects an authenticated request after its daily quota is reached', async () => {
+      const usageService = {
+        consumeChatRequest: vi.fn().mockResolvedValue({
+          allowed: false,
+          limit: 10,
+          remaining: 0,
+          resetsAt: new Date(Date.now() + 60_000),
+        }),
+      };
+      await startServer({
+        chatAuthMiddleware: (req, _res, next) => {
+          req.user = { id: 'c0a80101-0000-4000-8000-000000000001' };
+          next();
+        },
+        chatQuotaMiddleware: createChatQuotaMiddleware({ usageService }),
+      });
+
+      const response = await postChat(validBody);
+
+      expect(response.status).toBe(429);
+      expect(response.headers.get('x-chat-quota-remaining')).toBe('0');
+      expect(response.headers.get('retry-after')).toBeTruthy();
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: 'CHAT_QUOTA_EXCEEDED' },
+      });
+      expect(usageService.consumeChatRequest).toHaveBeenCalledWith(
+        'c0a80101-0000-4000-8000-000000000001',
+      );
+      expect(provider.generateReply).not.toHaveBeenCalled();
+    });
+
+    it('returns quota usage headers for an allowed authenticated request', async () => {
+      const usageService = {
+        consumeChatRequest: vi.fn().mockResolvedValue({
+          allowed: true,
+          limit: 10,
+          remaining: 9,
+          resetsAt: new Date(Date.now() + 60_000),
+        }),
+      };
+      await startServer({
+        chatAuthMiddleware: (req, _res, next) => {
+          req.user = { id: 'c0a80101-0000-4000-8000-000000000001' };
+          next();
+        },
+        chatQuotaMiddleware: createChatQuotaMiddleware({ usageService }),
+      });
+
+      const response = await postChat(validBody);
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('x-chat-quota-limit')).toBe('10');
+      expect(response.headers.get('x-chat-quota-remaining')).toBe('9');
+      expect(response.headers.get('x-chat-quota-reset')).toMatch(/^\d+$/);
+      expect(provider.generateReply).toHaveBeenCalledOnce();
     });
   });
 
@@ -515,6 +579,28 @@ describe('POST /api/chat', () => {
       expect(response.status).toBe(200);
       expect(body.status).toBe('ok');
       expect(JSON.stringify(body)).not.toMatch(/key|token|secret|password/i);
+    });
+
+    it('reports readiness only when the database check succeeds', async () => {
+      await startServer({
+        readinessCheck: async () => {},
+      });
+
+      const response = await fetch(`${baseUrl}/api/health/ready`);
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({ status: 'ready' });
+    });
+
+    it('returns a safe unavailable response when a readiness dependency fails', async () => {
+      await startServer({
+        readinessCheck: async () => { throw new Error('connection string must stay private'); },
+      });
+
+      const response = await fetch(`${baseUrl}/api/health/ready`);
+      const body = await response.json();
+      expect(response.status).toBe(503);
+      expect(body.status).toBe('not_ready');
+      expect(JSON.stringify(body)).not.toContain('connection string');
     });
   });
 });

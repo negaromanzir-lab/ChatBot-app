@@ -9,6 +9,7 @@ function mapUpload(row) {
     contentType: row.content_type,
     size: Number(row.size_bytes),
     createdAt: row.created_at,
+    indexStatus: row.index_status ?? null,
   };
 }
 
@@ -46,9 +47,11 @@ export function createUploadRepository({ databasePool } = {}) {
     async list(userId, conversationId) {
       const result = await db.query(
         `SELECT c.id AS owned_conversation_id,
-                ${QUALIFIED_PUBLIC_COLUMNS}
+                ${QUALIFIED_PUBLIC_COLUMNS},
+                d.status AS index_status
          FROM conversations c
          LEFT JOIN file_uploads f ON f.conversation_id = c.id
+         LEFT JOIN documents d ON d.upload_id = f.id
          WHERE c.user_id = $1 AND c.id = $2
          ORDER BY f.created_at ASC, f.id ASC`,
         [userId, conversationId],
