@@ -38,4 +38,20 @@ describe('Composer attachments', () => {
     expect(onDownloadUpload).toHaveBeenCalledWith(upload);
     expect(onDeleteUpload).toHaveBeenCalledWith(upload);
   });
+
+  it('explains when document search indexing is pending', () => {
+    render(
+      <Composer
+        uploads={[{
+          id: 'upload-2',
+          name: 'unindexed.txt',
+          contentType: 'text/plain',
+          size: 5,
+          indexStatus: 'pending',
+        }]}
+      />,
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent('Search setup required');
+  });
 });

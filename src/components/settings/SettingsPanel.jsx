@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, IconButton } from '../ui/Button.jsx';
 import { Icon } from '../ui/Icon.jsx';
 import { THEME_PREFERENCES } from '../../hooks/useTheme.js';
@@ -25,8 +25,18 @@ export function SettingsPanel({
   modelError = null,
   displayName,
   onDisplayNameChange,
+  onDisplayNameSave,
+  isLoadingSettings = false,
+  isSavingSettings = false,
+  settingsError = null,
   onClearHistory,
 }) {
+  const [displayNameDraft, setDisplayNameDraft] = useState(displayName ?? '');
+
+  useEffect(() => {
+    setDisplayNameDraft(displayName ?? '');
+  }, [displayName]);
+
   useEffect(() => {
     if (!open) return undefined;
 
@@ -71,6 +81,7 @@ export function SettingsPanel({
                   themePreference === value ? ' settings__theme-option--active' : ''
                 }`}
                 aria-pressed={themePreference === value}
+                disabled={isLoadingSettings || isSavingSettings}
                 onClick={() => onThemeChange?.(value)}
               >
                 <Icon name={THEME_ICONS[value]} size={16} />
@@ -90,7 +101,7 @@ export function SettingsPanel({
             className="settings__input settings__select"
             value={selectedModelId ?? ''}
             onChange={(event) => onModelChange?.(event.target.value)}
-            disabled={!models.length}
+            disabled={!models.length || isLoadingSettings || isSavingSettings}
           >
             {!models.length && <option value="">Loading available models…</option>}
             {models.map((model) => (
@@ -100,6 +111,8 @@ export function SettingsPanel({
             ))}
           </select>
           {modelError && <p className="settings__error" role="alert">{modelError}</p>}
+          {settingsError && <p className="settings__error" role="alert">{settingsError}</p>}
+          {isSavingSettings && <p className="settings__description" role="status">Saving settings…</p>}
           <p className="settings__description">
             Only models configured by the server are available.
           </p>
@@ -116,8 +129,16 @@ export function SettingsPanel({
             type="text"
             maxLength={40}
             autoComplete="off"
-            value={displayName}
-            onChange={(event) => onDisplayNameChange?.(event.target.value)}
+            value={displayNameDraft}
+            disabled={isLoadingSettings || isSavingSettings}
+            onChange={(event) => {
+              setDisplayNameDraft(event.target.value);
+              onDisplayNameChange?.(event.target.value);
+            }}
+            onBlur={() => {
+              const nextName = displayNameDraft.trim();
+              if (nextName && nextName !== displayName) onDisplayNameSave?.(nextName);
+            }}
           />
         </section>
 

@@ -6,6 +6,7 @@ import mammoth from 'mammoth';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createLocalFileStorage } from './localFileStorage.js';
 import { createUploadRepository } from './upload.repository.js';
+import { createRagService } from '../rag/rag.service.js';
 
 const DOCX_MIME_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -220,7 +221,7 @@ async function extractText(file, extension) {
       for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
         const page = await document.getPage(pageNumber);
         const content = await page.getTextContent();
-        text += `${content.items.map((item) => item.str ?? '').join(' ')}\n`;
+        text += `[Page ${pageNumber}]\n${content.items.map((item) => item.str ?? '').join(' ')}\n`;
         if (text.length >= MAX_EXTRACTED_TEXT_LENGTH) break;
       }
       return text.slice(0, MAX_EXTRACTED_TEXT_LENGTH);
@@ -242,10 +243,18 @@ async function extractText(file, extension) {
 }
 
 export function createUploadService({
-  repository = createUploadRepository(),
-  storage = createLocalFileStorage(),
+  repository: injectedRepository,
+  storage: injectedStorage,
+  documentIndexer: injectedDocumentIndexer,
   maxSizeBytes = 10 * 1024 * 1024,
 } = {}) {
+  const repository = injectedRepository ?? createUploadRepository();
+  const storage = injectedStorage ?? createLocalFileStorage();
+  let documentIndexer = injectedDocumentIndexer;
+  if (documentIndexer === undefined && !injectedRepository) {
+    documentIndexer = createRagService();
+  }
+
   async function list(userId, conversationId) {
     return repository.list(userId, conversationId);
   }
@@ -258,6 +267,7 @@ export function createUploadService({
     const extractedText = await extractText(file, extension);
     const storageKey = randomUUID();
     await storage.write(storageKey, file.buffer);
+    let persisted = false;
     try {
       const uploadRecord = await repository.create(userId, conversationId, {
         id: storageKey,
@@ -267,12 +277,32 @@ export function createUploadService({
         extractedText,
       });
       if (!uploadRecord) {
-        await storage.delete(storageKey);
         throw ApiError.notFound('CONVERSATION_NOT_FOUND', 'Conversation not found.');
       }
-      return uploadRecord;
+      persisted = true;
+      const indexStatus = extractedText && documentIndexer
+        ? (await documentIndexer.indexDocument({
+          userId,
+          conversationId,
+          uploadId: uploadRecord.id,
+          text: extractedText,
+        })).status
+        : undefined;
+      return {
+        ...uploadRecord,
+        ...(indexStatus ? { indexStatus } : {}),
+      };
     } catch (error) {
-      if (error.code === 'CONVERSATION_NOT_FOUND') throw error;
+      if (persisted) {
+        try {
+          await repository.delete(userId, conversationId, storageKey);
+        } catch (cleanupError) {
+          logger.error(
+            { err: cleanupError, uploadId: storageKey },
+            'Failed to clean up an upload record after indexing failed',
+          );
+        }
+      }
       try {
         await storage.delete(storageKey);
       } catch (cleanupError) {

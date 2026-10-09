@@ -7,6 +7,7 @@ let baseUrl;
 let conversationService;
 let authService;
 let clerkClient;
+let settingsService;
 
 const testUser = {
   id: 'c0a80101-0000-4000-8000-000000000001',
@@ -52,12 +53,25 @@ async function startServer() {
     remove: vi.fn().mockResolvedValue(false),
     addMessage: vi.fn().mockResolvedValue(null),
   };
+  settingsService = {
+    get: vi.fn().mockResolvedValue({
+      theme: 'system',
+      displayName: null,
+      selectedModelId: null,
+    }),
+    update: vi.fn(async (_userId, patch) => ({
+      theme: patch.theme ?? 'system',
+      displayName: patch.displayName ?? null,
+      selectedModelId: patch.selectedModelId ?? null,
+    })),
+  };
 
   const app = createApp({
     authService,
     clerkClient,
     authResolver: (req) => req.auth,
     conversationService,
+    settingsService,
     clerkAuthMiddleware: (req, _res, next) => {
       req.auth = req.get('authorization') === 'Bearer valid-clerk-token'
         ? { userId: testUser.clerk_user_id }
@@ -100,6 +114,45 @@ describe('Clerk authentication and conversation ownership', () => {
     const response = await request('/api/conversations', { authenticated: false });
     expect(response.status).toBe(401);
     expect((await response.json()).error.code).toBe('AUTH_REQUIRED');
+  });
+
+  it('reads settings only for the authenticated database user', async () => {
+    const response = await request('/api/settings');
+
+    expect(response.status).toBe(200);
+    expect(settingsService.get).toHaveBeenCalledWith(testUser.id);
+    expect(await response.json()).toMatchObject({
+      settings: { theme: 'system', selectedModelId: null },
+    });
+  });
+
+  it('updates allowlisted settings for the authenticated account, ignoring supplied owner IDs', async () => {
+    const response = await request('/api/settings', {
+      method: 'PATCH',
+      body: { theme: 'dark', selectedModelId: 'openai-default', userId: 'other-user' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(settingsService.update).toHaveBeenCalledWith(testUser.id, {
+      theme: 'dark',
+      selectedModelId: 'openai-default',
+    });
+  });
+
+  it('validates settings values and rejects an empty update', async () => {
+    const invalidTheme = await request('/api/settings', {
+      method: 'PATCH',
+      body: { theme: 'neon' },
+    });
+    expect(invalidTheme.status).toBe(400);
+    expect(settingsService.update).not.toHaveBeenCalled();
+
+    const emptyUpdate = await request('/api/settings', {
+      method: 'PATCH',
+      body: {},
+    });
+    expect(emptyUpdate.status).toBe(400);
+    expect(settingsService.update).not.toHaveBeenCalled();
   });
 
   it('synchronizes an authenticated Clerk identity when no local user exists', async () => {

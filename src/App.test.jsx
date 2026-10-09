@@ -4,6 +4,7 @@ import App from './App';
 import * as chatService from './services/chatService.js';
 import * as conversationService from './services/conversationService.js';
 import * as modelService from './services/modelService.js';
+import * as settingsService from './services/settingsService.js';
 import * as authHook from './hooks/useAuth.js';
 import { clearConversations } from './services/conversationStorage.js';
 import { removeKey } from './services/localStorage.js';
@@ -89,6 +90,19 @@ vi.mock('./services/modelService.js', () => ({
   }),
 }));
 
+vi.mock('./services/settingsService.js', () => ({
+  getUserSettings: vi.fn().mockResolvedValue({
+    theme: 'system',
+    displayName: null,
+    selectedModelId: null,
+  }),
+  updateUserSettings: vi.fn(async (patch) => ({
+    theme: patch.theme ?? 'system',
+    displayName: patch.displayName ?? null,
+    selectedModelId: patch.selectedModelId ?? null,
+  })),
+}));
+
 function mockReply(content = 'A backend reply') {
   vi.mocked(chatService.streamAssistantReply).mockResolvedValue({
     id: 'reply-id',
@@ -137,6 +151,16 @@ beforeEach(() => {
       { id: 'openai-default', label: 'GPT (OpenAI)', provider: 'openai', supportsVision: true },
     ],
   });
+  vi.mocked(settingsService.getUserSettings).mockResolvedValue({
+    theme: 'system',
+    displayName: null,
+    selectedModelId: null,
+  });
+  vi.mocked(settingsService.updateUserSettings).mockImplementation(async (patch) => ({
+    theme: patch.theme ?? 'system',
+    displayName: patch.displayName ?? null,
+    selectedModelId: patch.selectedModelId ?? null,
+  }));
   vi.mocked(conversationService.uploadConversationFile).mockImplementation(
     async (_id, file) => ({
       id: 'uploaded-file-id',

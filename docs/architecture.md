@@ -11,17 +11,17 @@
 | 4 | Provider abstraction, timeout/error mapping, and SSE streaming | Complete |
 | 5 | PostgreSQL persistence and Clerk authentication | Complete |
 | 6 | File uploads and document understanding | Complete |
-| 7 | Settings and model controls | In progress |
-| 8 | Production hardening | Not started |
+| 7 | Settings and model controls | Complete |
+| 8 | Production hardening | Complete |
+| 9 | Retrieval-Augmented Generation (RAG) | In progress |
 
-Durable user settings remain deliberately absent. Conversations and upload
-metadata are backed by PostgreSQL and scoped to authenticated accounts. File
-bytes are stored on the private local filesystem behind a replaceable storage
-adapter.
+Conversations, upload metadata, and user settings are backed by PostgreSQL and
+scoped to authenticated accounts. File bytes are stored on the private local
+filesystem behind a replaceable storage adapter.
 
 ## Current baseline
 
-The application as it stands after Phase 6:
+The application as it stands after Phase 8:
 
 - `src/main.jsx` mounts `App` inside React Strict Mode.
 - `src/App.jsx` is a composition root only: it calls `useChatConversation` and
@@ -176,6 +176,10 @@ server/
 9. **Phase 8 — Production hardening:** add integration coverage, rate limits
    and quotas, security headers, operational logging/error reporting,
    deployment checks, and backup/restore procedures.
+10. **Phase 9 — Retrieval-Augmented Generation:** chunk extracted documents,
+    generate embeddings, store and search vectors in PostgreSQL/pgvector, scope
+    retrieval to the authenticated user, inject only relevant excerpts into
+    prompts, and return source citations.
 
 For every phase, run the relevant tests plus `npm run build` and `npm run lint`.
 Backend phases should add corresponding server tests and health/integration
@@ -222,7 +226,7 @@ RAG/vector retrieval without changing the chat contract.
 - `npm run db:migrate` — reports that migrations are up to date.
 - Upload metadata includes extracted document text through migration 004.
 
-## Phase 7 — Multi-provider model selection (in progress)
+## Phase 7 — Multi-provider model selection and persisted settings (complete)
 
 The server owns the model registry in `server/src/services/ai/modelRegistry.js`.
 It publishes only stable model IDs, labels, and provider names from authenticated
@@ -234,15 +238,67 @@ OpenAI, Gemini, Claude, OpenAI-compatible, and offline adapters implement the
 same `generateResponse()` / `streamResponse()` contract. Chat orchestration
 resolves each selected ID and caches the resulting adapter without exposing
 provider specifics to controllers or React. Model availability is controlled
-by server-only credentials and model settings. User selection is kept in local
-preferences and supplied to both one-shot and streaming chat requests. Registry
-models expose a safe `supportsVision` capability for the attachment UI and
-server-side request validation.
+by server-only credentials and model settings. User selection is persisted
+through authenticated `GET/PATCH /api/settings` and supplied to both one-shot
+and streaming chat requests. Theme and display-name preferences use the same
+user-owned settings record. The browser cache is scoped per authenticated user;
+the server remains the source of truth. Registry models expose a safe
+`supportsVision` capability for the attachment UI and server-side request
+validation.
+
+The `user_settings` table is created by migration 005 and cascades when its user
+is deleted. The backend derives the user from verified Clerk authentication;
+the request body cannot choose an account. Selected model IDs are validated
+against the enabled server model registry before persistence.
 
 The settings model selector is configuration-driven: models added to the
 server registry do not require provider-specific React branches. Gemini and
 Claude adapters normalize their one-shot, streaming, image inputs, and provider
 failures to the existing assistant message and `ApiError` contracts.
+
+## Phase 8 — Production hardening (complete)
+
+Valid chat requests consume a configurable per-user daily quota
+(`CHAT_DAILY_QUOTA`, default 100) in addition to the existing per-IP rate
+limiter. Migration 006 adds the daily usage table; a conditional PostgreSQL
+upsert reserves each request atomically, so multiple API replicas cannot race
+past the account quota. The API returns quota headers and a `Retry-After`
+header when exhausted. Reservations happen before provider invocation, so
+provider failures and client disconnects count toward the daily allowance.
+
+`GET /api/health` remains a liveness probe. `GET /api/health/ready` checks the
+database and responds 503 without exposing connection details if the database
+is unavailable. Existing security headers, CORS allowlisting, request
+correlation, redacted structured logging, provider timeouts, and graceful
+shutdown remain in force. Route-level tests cover quota enforcement and
+readiness responses.
+
+Production deployment, rate-limit scaling, PostgreSQL backup/restore, private
+upload backup, and quota retention procedures are documented in
+[docs/operations.md](./operations.md). The in-process per-IP rate limiter is
+not shared between replicas; a multi-replica deployment must apply a shared
+edge or rate-limit store. The per-user daily quota is PostgreSQL-backed and
+shared.
+
+## Phase 9 — Document retrieval with pgvector (in progress)
+
+Text uploads are extracted as before, then split into bounded overlapping
+chunks and indexed with server-side OpenAI embeddings. The embedding adapter is
+separate from chat providers; it uses the server-only `OPENAI_API_KEY`, so chat
+can still use OpenAI, Gemini, or Claude independently. Missing embedding
+credentials leave document indexing pending and produce an explicit API error
+when document search is requested; whole documents are never substituted into
+the prompt.
+
+Migration 007 creates `documents`, `document_chunks`, and `embeddings` with
+ownership-aware foreign keys and a cosine HNSW index. Retrieval requires the
+verified user ID, conversation ID, and attached upload IDs in the SQL filter,
+applies a similarity threshold and top-K limit, and passes only returned
+chunks to the chat provider. Replies append a Sources list with filename,
+section, page, or chunk references. PDF extraction adds page markers and
+Markdown headings provide section metadata. Chunk size, overlap, top-K, and
+threshold are server-configurable. Upload bytes and image-vision handling
+remain unchanged.
 
 ## Phase 0 validation
 

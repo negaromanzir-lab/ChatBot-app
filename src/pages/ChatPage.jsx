@@ -34,14 +34,25 @@ import {
  *   Escape, and whenever the viewport grows past the breakpoint.
  */
 export function ChatPage({ user }) {
-  const { preference, setPreference, theme, toggleTheme } = useTheme();
-  const { preferences, updatePreference } = usePreferences();
+  const { preference, setPreference, theme } = useTheme();
+  const {
+    preferences,
+    updatePreference,
+    isLoading: preferencesLoading,
+    isSaving: preferencesSaving,
+    error: preferencesError,
+  } = usePreferences(user.id);
   const [modelCatalog, setModelCatalog] = useState({ models: [], defaultModelId: null });
   const [modelCatalogError, setModelCatalogError] = useState(null);
   const selectedModelId = preferences.selectedModelId;
   const selectedModel = modelCatalog.models.find(({ id }) => id === selectedModelId);
 
   useEffect(() => {
+    if (!preferencesLoading) setPreference(preferences.theme);
+  }, [preferencesLoading, preferences.theme, setPreference]);
+
+  useEffect(() => {
+    if (preferencesLoading) return undefined;
     let active = true;
     listAvailableModels()
       .then((catalog) => {
@@ -59,7 +70,7 @@ export function ChatPage({ user }) {
         }
       });
     return () => { active = false; };
-  }, [preferences.selectedModelId, updatePreference]);
+  }, [preferences.selectedModelId, preferencesLoading, updatePreference]);
 
   const {
     conversations,
@@ -212,6 +223,15 @@ export function ChatPage({ user }) {
     setIsSidebarOpen(false);
   }
 
+  async function handleThemeChange(nextTheme) {
+    const saved = await updatePreference({ theme: nextTheme });
+    if (saved) setPreference(nextTheme);
+  }
+
+  function handleThemeToggle() {
+    void handleThemeChange(theme === 'dark' ? 'light' : 'dark');
+  }
+
   function handleSelectConversation(id) {
     selectConversation(id);
     setIsSidebarOpen(false);
@@ -254,7 +274,7 @@ export function ChatPage({ user }) {
         <ChatHeader
           title={activeConversation?.title ?? 'New chat'}
           theme={theme}
-          onToggleTheme={toggleTheme}
+          onToggleTheme={handleThemeToggle}
           onOpenSidebar={() => setIsSidebarOpen(true)}
         />
       }
@@ -294,13 +314,17 @@ export function ChatPage({ user }) {
         open={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         themePreference={preference}
-        onThemeChange={setPreference}
+        onThemeChange={handleThemeChange}
         models={modelCatalog.models}
         selectedModelId={selectedModelId}
         onModelChange={(modelId) => updatePreference({ selectedModelId: modelId })}
         modelError={modelCatalogError}
         displayName={preferences.displayName}
-        onDisplayNameChange={(value) => updatePreference({ displayName: value })}
+        onDisplayNameChange={() => {}}
+        onDisplayNameSave={(displayName) => updatePreference({ displayName })}
+        isLoadingSettings={preferencesLoading}
+        isSavingSettings={preferencesSaving}
+        settingsError={preferencesError}
         onClearHistory={handleClearHistory}
       />
     </AppShell>

@@ -17,13 +17,24 @@ describe('upload repository ownership', () => {
 
   it('lists only files belonging to the specified user and conversation', async () => {
     const databasePool = {
-      query: vi.fn().mockResolvedValue({ rows: [] }),
+      query: vi.fn().mockResolvedValue({ rows: [{
+        id: 'upload-id',
+        conversation_id: 'conversation-id',
+        original_name: 'notes.txt',
+        content_type: 'text/plain',
+        size_bytes: 12,
+        created_at: new Date('2026-01-01T00:00:00Z'),
+        index_status: 'ready',
+      }] }),
     };
     const repository = createUploadRepository({ databasePool });
 
-    await repository.list('owner-id', 'conversation-id');
+    await expect(repository.list('owner-id', 'conversation-id')).resolves.toMatchObject([
+      { id: 'upload-id', indexStatus: 'ready' },
+    ]);
 
     expect(databasePool.query.mock.calls[0][0]).toContain('c.user_id = $1 AND c.id = $2');
+    expect(databasePool.query.mock.calls[0][0]).toContain('LEFT JOIN documents d');
     expect(databasePool.query.mock.calls[0][1]).toEqual(['owner-id', 'conversation-id']);
   });
 
