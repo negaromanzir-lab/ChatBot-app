@@ -20,6 +20,15 @@ import './MessageBubble.css';
 export function MessageBubble({ message, onRegenerate, canRegenerate = false, showActions = true }) {
   const { sender, message: content, createdAt } = message;
   const isUser = sender === 'user';
+  const hasWebSources = !isUser && content.includes('**Web search sources**');
+  const hasDocumentSources = !isUser && content.includes('**Uploaded document sources**');
+  const sourceLabel = hasWebSources && hasDocumentSources
+    ? 'Web search and uploaded documents'
+    : hasWebSources
+      ? 'Web search'
+      : hasDocumentSources
+        ? 'Uploaded documents'
+        : 'AI knowledge';
 
   const timestamp = formatTime(createdAt);
 
@@ -31,6 +40,11 @@ export function MessageBubble({ message, onRegenerate, canRegenerate = false, sh
       {!isUser && <Avatar sender={sender} />}
 
       <div className="message-bubble__content">
+        {!isUser && (
+          <p className="message-bubble__source-label" aria-label="Answer source type">
+            {sourceLabel}
+          </p>
+        )}
         <div className="message-bubble__body">
           {isUser ? (
             <p className="message-bubble__text">{content}</p>

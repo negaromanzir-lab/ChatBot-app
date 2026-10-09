@@ -13,7 +13,8 @@
 | 6 | File uploads and document understanding | Complete |
 | 7 | Settings and model controls | Complete |
 | 8 | Production hardening | Complete |
-| 9 | Retrieval-Augmented Generation (RAG) | In progress |
+| 9 | Retrieval-Augmented Generation (RAG) | Complete |
+| 10 | Controlled optional web search | Complete |
 
 Conversations, upload metadata, and user settings are backed by PostgreSQL and
 scoped to authenticated accounts. File bytes are stored on the private local
@@ -180,6 +181,10 @@ server/
     generate embeddings, store and search vectors in PostgreSQL/pgvector, scope
     retrieval to the authenticated user, inject only relevant excerpts into
     prompts, and return source citations.
+11. **Phase 10 — Controlled optional web search:** let the selected AI model
+    decide when approved web sources are useful, retrieve bounded page excerpts
+    through a server-side search provider, protect against prompt injection,
+    and return clearly labeled web citations.
 
 For every phase, run the relevant tests plus `npm run build` and `npm run lint`.
 Backend phases should add corresponding server tests and health/integration
@@ -280,7 +285,7 @@ not shared between replicas; a multi-replica deployment must apply a shared
 edge or rate-limit store. The per-user daily quota is PostgreSQL-backed and
 shared.
 
-## Phase 9 — Document retrieval with pgvector (in progress)
+## Phase 9 — Document retrieval with pgvector (complete)
 
 Text uploads are extracted as before, then split into bounded overlapping
 chunks and indexed with server-side OpenAI embeddings. The embedding adapter is
@@ -299,6 +304,22 @@ section, page, or chunk references. PDF extraction adds page markers and
 Markdown headings provide section metadata. Chunk size, overlap, top-K, and
 threshold are server-configurable. Upload bytes and image-vision handling
 remain unchanged.
+
+## Phase 10 — Controlled web search (complete)
+
+Optional web search uses a model-generated search decision and a server-side
+Tavily request; the model never receives arbitrary URL-fetching access. Search
+is disabled by default. When enabled, a configured allowlist of trusted domains
+constrains both the provider request and accepted results. Page text is bounded
+before it is added to the prompt, treated as untrusted data, and accompanied by
+an explicit instruction to ignore embedded commands. Answers label and link
+web sources separately from uploaded-document citations. Answers without
+retrieved sources remain normal AI knowledge answers.
+
+Configure `WEB_SEARCH_ENABLED`, `TAVILY_API_KEY`, `WEB_SEARCH_ALLOWED_DOMAINS`,
+and `WEB_SEARCH_MAX_RESULTS` on the server. The model decision is limited to a
+short search query; network requests are restricted to Tavily, and source links
+must use HTTPS on an approved domain.
 
 ## Phase 0 validation
 

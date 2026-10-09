@@ -28,7 +28,7 @@ export function createClaudeProvider(overrides = {}) {
     );
   }
 
-  function createPayload(messages, stream) {
+  function createPayload(messages, stream, systemInstruction = settings.systemInstruction) {
     if (!messages.length) {
       throw ApiError.badRequest(
         'AI_PROVIDER_INVALID_MESSAGES',
@@ -38,7 +38,7 @@ export function createClaudeProvider(overrides = {}) {
     return {
       model: settings.model,
       max_tokens: settings.maxTokens,
-      system: settings.systemInstruction,
+      system: systemInstruction,
       messages: messages.map((message) => ({
         ...message,
         content: typeof message.content === 'string'
@@ -68,7 +68,7 @@ export function createClaudeProvider(overrides = {}) {
     };
   }
 
-  async function request(messages, { signal, stream = false } = {}) {
+  async function request(messages, { signal, stream = false, systemInstruction } = {}) {
     try {
       return await settings.fetchImpl(API_URL, {
         method: 'POST',
@@ -78,7 +78,7 @@ export function createClaudeProvider(overrides = {}) {
           'anthropic-version': '2023-06-01',
           'x-api-key': settings.apiKey,
         },
-        body: JSON.stringify(createPayload(messages, stream)),
+        body: JSON.stringify(createPayload(messages, stream, systemInstruction)),
       });
     } catch (error) {
       throw mapProviderRequestError(error, settings.timeoutMs, signal, 'claude');
