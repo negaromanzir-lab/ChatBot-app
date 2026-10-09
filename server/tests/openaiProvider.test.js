@@ -58,6 +58,21 @@ describe('openai-compatible provider', () => {
       });
     });
 
+    it('allows per-request server instructions without changing default compatible requests', async () => {
+      const fetchImpl = stubFetch({
+        json: { choices: [{ message: { role: 'assistant', content: '{"search":false}' } }] },
+      });
+
+      await createProvider({ fetchImpl }).generateReply(messages, {
+        systemInstruction: 'Return a web-search decision.',
+      });
+
+      expect(JSON.parse(fetchImpl.mock.calls[0][1].body).messages[0]).toEqual({
+        role: 'system',
+        content: 'Return a web-search decision.',
+      });
+    });
+
     it('sends the key as a bearer token', async () => {
       const fetchImpl = stubFetch({
         json: { choices: [{ message: { role: 'assistant', content: 'Hi!' } }] },

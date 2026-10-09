@@ -124,7 +124,7 @@ export function createOpenAIProvider(overrides = {}) {
         }),
     }));
 
-    return settings.includeSystemInstruction && instruction
+    return (settings.includeSystemInstruction || systemInstruction) && instruction
       ? [{ role: 'system', content: instruction }, ...normalizedMessages]
       : normalizedMessages;
   }

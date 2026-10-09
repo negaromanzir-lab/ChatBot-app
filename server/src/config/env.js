@@ -44,6 +44,12 @@ const schema = z.object({
   RAG_CHUNK_OVERLAP: z.coerce.number().int().min(0).max(2000).default(200),
   RAG_TOP_K: z.coerce.number().int().min(1).max(20).default(5),
   RAG_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.25),
+  WEB_SEARCH_ENABLED: booleanFromString,
+  TAVILY_API_KEY: z.string().optional(),
+  WEB_SEARCH_MAX_RESULTS: z.coerce.number().int().min(1).max(5).default(5),
+  WEB_SEARCH_ALLOWED_DOMAINS: z.string().default(
+    'who.int,nih.gov,cdc.gov,nasa.gov,europa.eu,un.org,worldbank.org,oecd.org,reuters.com,apnews.com,bbc.com,arxiv.org,nature.com,science.org,wikipedia.org,docs.github.com',
+  ),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
   ANTHROPIC_API_KEY: z.string().optional(),
@@ -51,6 +57,15 @@ const schema = z.object({
   MAX_MESSAGES_PER_REQUEST: z.coerce.number().int().positive().default(50),
   MAX_CONTENT_LENGTH: z.coerce.number().int().positive().default(4000),
 }).refine(
+  (values) => !values.WEB_SEARCH_ENABLED || (
+    Boolean(values.TAVILY_API_KEY)
+    && values.WEB_SEARCH_ALLOWED_DOMAINS.split(',').some((domain) => domain.trim())
+  ),
+  {
+    path: ['WEB_SEARCH_ENABLED'],
+    message: 'WEB_SEARCH_ENABLED requires TAVILY_API_KEY and at least one allowed domain.',
+  },
+).refine(
   (values) => values.RAG_CHUNK_OVERLAP < values.RAG_CHUNK_SIZE,
   {
     path: ['RAG_CHUNK_OVERLAP'],
@@ -138,6 +153,15 @@ export const config = Object.freeze({
     chunkOverlap: raw.RAG_CHUNK_OVERLAP,
     topK: raw.RAG_TOP_K,
     similarityThreshold: raw.RAG_SIMILARITY_THRESHOLD,
+  }),
+  webSearch: Object.freeze({
+    enabled: raw.WEB_SEARCH_ENABLED,
+    apiKey: raw.TAVILY_API_KEY,
+    maxResults: raw.WEB_SEARCH_MAX_RESULTS,
+    allowedDomains: raw.WEB_SEARCH_ALLOWED_DOMAINS
+      .split(',')
+      .map((domain) => domain.trim().toLowerCase())
+      .filter(Boolean),
   }),
   bodyLimit: raw.BODY_LIMIT,
   ai: Object.freeze({

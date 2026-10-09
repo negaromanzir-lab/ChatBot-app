@@ -15,6 +15,9 @@
    client disconnects.
    For document search, configure the server-only `OPENAI_API_KEY` for the
    embeddings API, even if chat is routed to a different model vendor.
+   Optional web search is disabled by default. To enable it, store
+   `TAVILY_API_KEY` server-side, set `WEB_SEARCH_ENABLED=true`, and configure
+   `WEB_SEARCH_ALLOWED_DOMAINS` to the approved sources for your deployment.
 4. Build and test the exact release artifact with `npm ci`, `npm test`,
    `npm run lint`, and `npm run build`. Keep `dist/` and server code from the
    same revision.

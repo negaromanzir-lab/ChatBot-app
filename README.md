@@ -120,6 +120,19 @@ characters, 5 chunks, and 0.25 cosine similarity. Migration 007 enables
 pgvector and creates `documents`, `document_chunks`, and `embeddings`; existing
 installations must apply it with `npm run db:migrate`.
 
+### Optional web search
+
+Web search is disabled by default. To enable it, configure server-side
+`WEB_SEARCH_ENABLED=true` and `TAVILY_API_KEY`; `WEB_SEARCH_ALLOWED_DOMAINS`
+restricts trusted sources and `WEB_SEARCH_MAX_RESULTS` caps retrieved pages
+(1–5). The selected AI model decides whether current or externally verifiable
+information warrants a search. Search runs through the controlled Tavily
+backend tool, which returns bounded page text only from approved HTTPS domains;
+the model cannot fetch arbitrary URLs. Retrieved text is treated as untrusted
+data, and answers show a separate **Web search sources** citation list.
+Uploaded-document sources are labeled separately; answers without either kind
+of retrieved source are ordinary model-knowledge answers.
+
 ### Enabling a real AI provider
 
 Out of the box `AI_PROVIDER=local`, a deterministic offline provider that makes no network

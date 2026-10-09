@@ -28,7 +28,7 @@ export function createGeminiProvider(overrides = {}) {
     );
   }
 
-  function payload(messages) {
+  function payload(messages, systemInstruction = settings.systemInstruction) {
     const contents = messages.map(({ role, content }) => ({
       role: role === 'assistant' ? 'model' : 'user',
       parts: typeof content === 'string'
@@ -60,7 +60,7 @@ export function createGeminiProvider(overrides = {}) {
     }
     return {
       systemInstruction: {
-        parts: [{ text: settings.systemInstruction }],
+        parts: [{ text: systemInstruction }],
       },
       contents,
       generationConfig: { maxOutputTokens: settings.maxTokens },
@@ -72,7 +72,7 @@ export function createGeminiProvider(overrides = {}) {
     return `${API_BASE_URL}/${encodeURIComponent(settings.model)}:${method}`;
   }
 
-  async function request(messages, { signal, stream = false } = {}) {
+  async function request(messages, { signal, stream = false, systemInstruction } = {}) {
     try {
       return await settings.fetchImpl(endpoint(stream), {
         method: 'POST',
@@ -81,7 +81,7 @@ export function createGeminiProvider(overrides = {}) {
           'content-type': 'application/json',
           'x-goog-api-key': settings.apiKey,
         },
-        body: JSON.stringify(payload(messages)),
+        body: JSON.stringify(payload(messages, systemInstruction)),
       });
     } catch (error) {
       throw mapProviderRequestError(error, settings.timeoutMs, signal, 'gemini');
