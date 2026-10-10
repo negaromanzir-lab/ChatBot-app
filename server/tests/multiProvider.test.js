@@ -177,7 +177,7 @@ describe('model-aware chat orchestration', () => {
       generateResponse: vi.fn()
         .mockResolvedValueOnce({
           role: 'assistant',
-          content: '{"search":true,"query":"WHO current health guidance"}',
+          content: '{"toolCall":{"name":"searchWeb","arguments":{"query":"WHO current health guidance"}}}',
         })
         .mockResolvedValueOnce({ role: 'assistant', content: 'Current guidance is available.' }),
     };
@@ -216,7 +216,7 @@ describe('model-aware chat orchestration', () => {
     const provider = {
       name: 'openai',
       generateResponse: vi.fn()
-        .mockResolvedValueOnce({ role: 'assistant', content: '{"search":false}' })
+        .mockResolvedValueOnce({ role: 'assistant', content: '{"toolCall":null}' })
         .mockResolvedValueOnce({ role: 'assistant', content: 'A general explanation.' }),
     };
     const webSearchService = { searchWeb: vi.fn() };
@@ -237,7 +237,7 @@ describe('model-aware chat orchestration', () => {
       name: 'openai',
       generateResponse: vi.fn().mockResolvedValue({
         role: 'assistant',
-        content: '{"search":true,"query":"WHO health guidance"}',
+        content: '{"toolCall":{"name":"searchWeb","arguments":{"query":"WHO health guidance"}}}',
       }),
       async *streamResponse() {
         yield 'Sourced answer.';

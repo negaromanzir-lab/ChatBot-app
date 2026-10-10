@@ -307,19 +307,29 @@ remain unchanged.
 
 ## Phase 10 — Controlled web search (complete)
 
-Optional web search uses a model-generated search decision and a server-side
-Tavily request; the model never receives arbitrary URL-fetching access. Search
-is disabled by default. When enabled, a configured allowlist of trusted domains
-constrains both the provider request and accepted results. Page text is bounded
-before it is added to the prompt, treated as untrusted data, and accompanied by
-an explicit instruction to ignore embedded commands. Answers label and link
-web sources separately from uploaded-document citations. Answers without
-retrieved sources remain normal AI knowledge answers.
+Optional web search uses a model-generated tool decision and a server-side
+Tavily request; the model never receives arbitrary URL-fetching access. The
+server-side tool registry defines each tool's name, description, JSON input
+schema, required permissions, and handler. The registry exposes only permitted
+tools, validates model arguments, checks permissions again before execution,
+and logs execution outcomes without recording queries or returned page text.
+Model output can only select a registered handler; it is never evaluated as
+JavaScript or a shell command.
+
+Search is disabled by default. When enabled, a configured allowlist of trusted
+domains constrains both the provider request and accepted results. Extracted
+page text is bounded before it is added to the prompt, treated as untrusted
+data, and accompanied by explicit instructions to ignore embedded commands.
+Answers label and link web sources separately from uploaded-document
+citations. Answers without retrieved sources remain normal AI knowledge
+answers.
 
 Configure `WEB_SEARCH_ENABLED`, `TAVILY_API_KEY`, `WEB_SEARCH_ALLOWED_DOMAINS`,
-and `WEB_SEARCH_MAX_RESULTS` on the server. The model decision is limited to a
-short search query; network requests are restricted to Tavily, and source links
-must use HTTPS on an approved domain.
+and `WEB_SEARCH_MAX_RESULTS` on the server. The model may request only the
+registered `searchWeb` tool with a schema-validated short query; network
+requests are restricted to Tavily, and source links must use HTTPS on an
+approved domain. The registry is the extension point for future server-owned
+tools, each with its own schema, permission requirements, and handler.
 
 ## Phase 0 validation
 
