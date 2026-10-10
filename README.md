@@ -132,6 +132,9 @@ the model cannot fetch arbitrary URLs. Retrieved text is treated as untrusted
 data, and answers show a separate **Web search sources** citation list.
 Uploaded-document sources are labeled separately; answers without either kind
 of retrieved source are ordinary model-knowledge answers.
+Tool requests are validated against registered input schemas and server-side
+permissions, and executions are logged without logging search terms or page
+contents. Model-generated code is never executed.
 
 ### Enabling a real AI provider
 

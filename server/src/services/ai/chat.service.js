@@ -6,6 +6,8 @@ import { createUploadService } from '../../modules/uploads/upload.service.js';
 import { createRagService } from '../../modules/rag/rag.service.js';
 import config from '../../config/env.js';
 import { createWebSearchService } from '../../modules/web-search/webSearch.service.js';
+import { createToolRegistry } from './toolRegistry.js';
+import { createSearchWebTool } from './tools/searchWeb.tool.js';
 
 /**
  * Chat orchestration.
@@ -27,12 +29,23 @@ export function createChatService({
   uploadService,
   ragService,
   webSearchService,
+  toolRegistry,
+  resolveToolPermissions = ({ provider: activeProvider }) => (
+    webSearchSettings.enabled && activeProvider.name !== 'local' ? ['web:search'] : []
+  ),
   webSearchSettings = config.webSearch,
 } = {}) {
   const providerCache = new Map();
   let resolvedUploadService = uploadService;
   let resolvedRagService = ragService;
   let resolvedWebSearchService = webSearchService;
+  const tools = toolRegistry ?? createToolRegistry({
+    tools: [
+      createSearchWebTool({
+        searchWeb: (query, options) => getWebSearchService().searchWeb(query, options),
+      }),
+    ],
+  });
 
   function getSelection(modelId) {
     if (provider) {
@@ -101,6 +114,8 @@ export function createChatService({
     if (webCitations.length) {
       const sources = webCitations.map((citation, index) => {
         const title = String(citation.title ?? 'Web page')
+          .replace(/\s+/g, ' ')
+          .trim()
           .replaceAll('\\', '\\\\')
           .replaceAll('[', '\\[')
           .replaceAll(']', '\\]');
@@ -111,10 +126,14 @@ export function createChatService({
     return sections.length ? `\n\n${sections.join('\n\n')}` : '';
   }
 
-  async function decideWebSearch(messages, activeProvider, options) {
-    if (!webSearchSettings.enabled || activeProvider.name === 'local') {
-      return { performed: false, results: [] };
-    }
+  async function decideTool(messages, activeProvider, options) {
+    const permissions = resolveToolPermissions({
+      provider: activeProvider,
+      userId: options.userId,
+      conversationId: options.conversationId,
+    });
+    const availableTools = tools.getAvailableTools(permissions);
+    if (!availableTools.length) return { toolName: null, result: null };
     const generateResponse = activeProvider.generateResponse ?? activeProvider.generateReply;
     if (typeof generateResponse !== 'function') {
       throw ApiError.internal(
@@ -128,48 +147,55 @@ export function createChatService({
       .map(({ role, content }) => ({ role, content: textContent(content).slice(-2000) }))
       .filter((message) => message.content);
     if (!planningMessages.some((message) => message.role === 'user')) {
-      return { performed: false, results: [] };
+      return { toolName: null, result: null };
     }
 
     const plan = await generateResponse.call(activeProvider, planningMessages, {
       ...(options.signal ? { signal: options.signal } : {}),
       systemInstruction:
         'Decide whether answering the latest user question needs current or externally verifiable information from the web. ' +
-        'Search only when useful; do not search for ordinary explanations, creative tasks, or information already adequately provided in the conversation. ' +
-        'Return exactly one JSON object and nothing else: {"search":false} or {"search":true,"query":"short focused search query"}. ' +
-        'The only available action is a bounded search over server-approved domains. Never request arbitrary URLs or other tools.',
+        'Call a tool only when useful; do not search for ordinary explanations, creative tasks, or information already adequately provided in the conversation. ' +
+        'Return exactly one JSON object and nothing else: {"toolCall":null} or {"toolCall":{"name":"registered tool name","arguments":{...}}}. ' +
+        `Only these server-controlled tools are available: ${JSON.stringify(availableTools)}. ` +
+        'Never invent tool names, request arbitrary URLs, or ask to execute code or commands.',
     });
-    let decision;
+    let call;
     try {
-      decision = JSON.parse(plan?.content);
+      const decision = JSON.parse(plan?.content);
+      if (decision?.toolCall === null) return { toolName: null, result: null };
+      if (
+        !decision?.toolCall
+        || typeof decision.toolCall.name !== 'string'
+        || !Object.hasOwn(decision.toolCall, 'arguments')
+      ) {
+        throw new TypeError('Invalid tool call shape');
+      }
+      call = decision.toolCall;
     } catch (error) {
       throw ApiError.badGateway(
-        'AI_WEB_SEARCH_PLAN_INVALID',
-        'The AI provider returned an invalid web-search decision.',
+        'AI_TOOL_PLAN_INVALID',
+        'The AI provider returned an invalid tool decision.',
         { cause: error },
       );
     }
-    if (decision?.search === false) return { performed: false, results: [] };
-    if (
-      decision?.search !== true
-      || typeof decision.query !== 'string'
-      || decision.query.trim().length < 2
-      || decision.query.length > 200
-    ) {
-      throw ApiError.badGateway(
-        'AI_WEB_SEARCH_PLAN_INVALID',
-        'The AI provider returned an invalid web-search decision.',
-      );
+    if (!availableTools.some((tool) => tool.name === call.name)) {
+      throw ApiError.badGateway('AI_TOOL_UNKNOWN', 'The AI requested an unavailable tool.');
     }
     return {
-      performed: true,
-      results: await getWebSearchService().searchWeb(decision.query, {
+      toolName: call.name,
+      result: await tools.execute(call.name, call.arguments, {
+        permissions,
         signal: options.signal,
+        userId: options.userId,
+        conversationId: options.conversationId,
       }),
     };
   }
 
-  async function prepareMessages(messages, options, model, webSearch) {
+  async function prepareMessages(messages, options, model, toolExecution) {
+    const webSearch = toolExecution.toolName === 'searchWeb'
+      ? { performed: true, results: toolExecution.result }
+      : { performed: false, results: [] };
     if (!options.fileIds?.length && !webSearch.performed) {
       return { messages, documentCitations: [], webCitations: [] };
     }
@@ -263,12 +289,12 @@ export function createChatService({
 
   async function generateAssistantReply(messages, options = {}) {
     const { model, provider: activeProvider } = getSelection(options.model);
-    const webSearch = await decideWebSearch(messages, activeProvider, options);
+    const toolExecution = await decideTool(messages, activeProvider, options);
     const {
       messages: preparedMessages,
       documentCitations,
       webCitations,
-    } = await prepareMessages(messages, options, model, webSearch);
+    } = await prepareMessages(messages, options, model, toolExecution);
 
     // Message contents are deliberately not logged — only shape metadata.
     // This keeps conversation content out of log sinks.
@@ -323,12 +349,12 @@ export function createChatService({
 
   async function* streamAssistantReply(messages, options = {}) {
     const { model, provider: activeProvider } = getSelection(options.model);
-    const webSearch = await decideWebSearch(messages, activeProvider, options);
+    const toolExecution = await decideTool(messages, activeProvider, options);
     const {
       messages: preparedMessages,
       documentCitations,
       webCitations,
-    } = await prepareMessages(messages, options, model, webSearch);
+    } = await prepareMessages(messages, options, model, toolExecution);
     const streamResponse = activeProvider.streamResponse;
 
     if (typeof streamResponse !== 'function') {
