@@ -136,6 +136,16 @@ Tool requests are validated against registered input schemas and server-side
 permissions, and executions are logged without logging search terms or page
 contents. Model-generated code is never executed.
 
+### Controlled AI tools
+
+The server registry also provides a safe arithmetic calculator, weather lookup
+through fixed Open-Meteo endpoints, search over attached documents, and
+authenticated todo creation. Document search is restricted to files attached
+to the active conversation. Todos are stored for the signed-in user and
+conversation; apply database migrations with `npm run db:migrate` to create the
+todo table. The calculator uses a small arithmetic parser, not `eval`. No tool
+provides arbitrary internet, JavaScript, or shell access.
+
 ### Enabling a real AI provider
 
 Out of the box `AI_PROVIDER=local`, a deterministic offline provider that makes no network

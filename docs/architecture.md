@@ -15,6 +15,7 @@
 | 8 | Production hardening | Complete |
 | 9 | Retrieval-Augmented Generation (RAG) | Complete |
 | 10 | Controlled optional web search | Complete |
+| 11 | Extensible controlled AI tool execution | Complete |
 
 Conversations, upload metadata, and user settings are backed by PostgreSQL and
 scoped to authenticated accounts. File bytes are stored on the private local
@@ -330,6 +331,25 @@ registered `searchWeb` tool with a schema-validated short query; network
 requests are restricted to Tavily, and source links must use HTTPS on an
 approved domain. The registry is the extension point for future server-owned
 tools, each with its own schema, permission requirements, and handler.
+
+## Phase 11 — Extensible controlled AI tools (complete)
+
+The chat orchestrator exposes only a fixed server-side registry to the model.
+Every tool declares a JSON input schema, a permission list, and a server-owned
+handler; the registry validates arguments and checks permissions again before
+dispatch. Tool input and output never become executable code. Execution logs
+record tool name, outcome, and duration without argument or result contents.
+
+The built-in tools are `calculator` (a bounded arithmetic parser, never
+`eval`), `searchWeb` (the Phase 10 allowlisted Tavily search),
+`documentSearch` (RAG limited to authenticated uploads in the active
+conversation), `getWeather` (fixed Open-Meteo geocoding and forecast endpoints),
+and `createTodo` (a database record scoped to the authenticated user and
+conversation). The model is instructed to use tools only when relevant and to
+create todos only on explicit user request. Todo data is introduced by
+migration 008. Future tools can be added by registering a schema, permissions,
+and handler; arbitrary URL access, JavaScript, and shell execution are not part
+of the tool contract.
 
 ## Phase 0 validation
 
