@@ -123,4 +123,32 @@ describe('conversation repository', () => {
     expect(client.query).toHaveBeenLastCalledWith('COMMIT');
     expect(client.release).toHaveBeenCalledOnce();
   });
+
+  it('archives and restores a conversation only for its owner', async () => {
+    const databasePool = {
+      query: vi.fn().mockResolvedValue({
+        rows: [{
+          id: 'conversation-id',
+          user_id: 'owner-id',
+          title: 'A useful title',
+          created_at: new Date(),
+          updated_at: new Date(),
+          archived_at: new Date(),
+        }],
+        rowCount: 1,
+      }),
+    };
+    const repository = createConversationRepository({ databasePool });
+
+    const archived = await repository.setArchived('owner-id', 'conversation-id', true);
+
+    expect(databasePool.query.mock.calls[0][0]).toContain('archived_at = CASE WHEN $3');
+    expect(databasePool.query.mock.calls[0][0]).toContain('WHERE id = $1 AND user_id = $2');
+    expect(databasePool.query.mock.calls[0][1]).toEqual([
+      'conversation-id',
+      'owner-id',
+      true,
+    ]);
+    expect(archived.archivedAt).toBeInstanceOf(Date);
+  });
 });

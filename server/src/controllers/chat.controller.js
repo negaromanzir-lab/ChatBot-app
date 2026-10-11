@@ -77,10 +77,12 @@ export function createChatController({ chatService } = {}) {
     res.flushHeaders();
 
     let content = '';
+    let tokenUsage = null;
     try {
       for await (const chunk of service.streamAssistantReply(messages, {
         signal: controller.signal,
         ...options,
+        onUsage: (usage) => { tokenUsage = usage; },
         onToolStatus: async (toolName) => {
           if (!writeEvent(res, { type: 'tool', name: toolName })) {
             await waitForDrain(res, controller.signal);
@@ -104,7 +106,11 @@ export function createChatController({ chatService } = {}) {
 
       writeEvent(res, {
         type: 'done',
-        message: { role: 'assistant', content },
+        message: {
+          role: 'assistant',
+          content,
+          ...(tokenUsage ? { usage: tokenUsage } : {}),
+        },
       });
       res.end();
     } catch (error) {

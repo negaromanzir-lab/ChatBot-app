@@ -97,6 +97,10 @@ export function ChatPage({ user }) {
     newChat,
     deleteConversation,
     renameConversation,
+    archiveConversation,
+    unarchiveConversation,
+    showArchived,
+    toggleShowArchived,
     removeAllConversations,
     setActiveMessages,
     updateConversationInfo,
@@ -366,10 +370,14 @@ export function ChatPage({ user }) {
           conversations={conversations}
           activeId={activeId}
           displayName={user.fullName || user.email}
+          showArchived={showArchived}
           onSelect={handleSelectConversation}
           onNewChat={handleNewChat}
           onDelete={deleteConversation}
           onRename={renameConversation}
+          onArchive={archiveConversation}
+          onUnarchive={unarchiveConversation}
+          onToggleArchived={toggleShowArchived}
           onClose={() => setIsSidebarOpen(false)}
           onOpenSettings={() => setIsSettingsOpen(true)}
         />

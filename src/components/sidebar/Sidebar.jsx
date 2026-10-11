@@ -41,10 +41,14 @@ export function Sidebar({
   conversations,
   activeId,
   displayName,
+  showArchived,
   onSelect,
   onNewChat,
   onDelete,
   onRename,
+  onArchive,
+  onUnarchive,
+  onToggleArchived,
   onClose,
   onOpenSettings,
 }) {
@@ -93,10 +97,24 @@ export function Sidebar({
         {!query && <kbd aria-hidden="true">Ctrl K</kbd>}
       </label>
 
+      <div className="sidebar__filter">
+        <button
+          type="button"
+          className="sidebar__filter-toggle"
+          aria-pressed={showArchived}
+          onClick={onToggleArchived}
+        >
+          <Icon name="archive" size={14} />
+          {showArchived ? 'Hide archived' : 'Show archived'}
+        </button>
+      </div>
+
       <nav className="sidebar__history" aria-label="Conversation history">
         {groups.length === 0 ? (
           <p className="sidebar__empty">
-            {query ? 'No conversations match your search.' : 'No conversations yet.'}
+            {query
+              ? 'No conversations match your search.'
+              : 'No conversations yet.'}
           </p>
         ) : (
           groups.map((group) => (
@@ -105,10 +123,13 @@ export function Sidebar({
               <ul className="sidebar__list">
                 {group.items.map((conversation) => {
                   const isActive = conversation.id === activeId;
+                  const isArchived = Boolean(conversation.archivedAt);
 
                   return (
                     <li
-                      className={`sidebar__row${isActive ? ' sidebar__row--active' : ''}`}
+                      className={`sidebar__row${isActive ? ' sidebar__row--active' : ''}${
+                        isArchived ? ' sidebar__row--archived' : ''
+                      }`}
                       key={conversation.id}
                     >
                       <button
@@ -125,15 +146,31 @@ export function Sidebar({
                         </span>
                       </button>
 
+                      {!isArchived && (
+                        <IconButton
+                          icon="pencil"
+                          label={`Rename conversation: ${conversation.title}`}
+                          size="sm"
+                          className="sidebar__row-rename"
+                          onClick={() => {
+                            const title = window.prompt('Rename conversation', conversation.title);
+                            if (title?.trim()) onRename(conversation.id, title);
+                          }}
+                        />
+                      )}
+
                       <IconButton
-                        icon="pencil"
-                        label={`Rename conversation: ${conversation.title}`}
+                        icon={isArchived ? 'unarchive' : 'archive'}
+                        label={
+                          isArchived
+                            ? `Unarchive conversation: ${conversation.title}`
+                            : `Archive conversation: ${conversation.title}`
+                        }
                         size="sm"
-                        className="sidebar__row-rename"
-                        onClick={() => {
-                          const title = window.prompt('Rename conversation', conversation.title);
-                          if (title?.trim()) onRename(conversation.id, title);
-                        }}
+                        className="sidebar__row-archive"
+                        onClick={() =>
+                          (isArchived ? onUnarchive : onArchive)(conversation.id)
+                        }
                       />
 
                       <IconButton

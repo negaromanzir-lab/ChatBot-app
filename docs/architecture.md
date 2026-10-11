@@ -24,20 +24,23 @@ filesystem behind a replaceable storage adapter.
 
 ## Current baseline
 
-The application as it stands after Phase 8:
+The application as it stands after Phase 12:
 
 - `src/main.jsx` mounts `App` inside React Strict Mode.
-- `src/App.jsx` is a composition root only: it calls `useChatConversation` and
-  wires the result into the chat components.
-- `src/features/chat/hooks/useChatConversation.js` owns the message list, the
-  pending flag, and the error state, and cancels in-flight work on unmount.
-- `src/features/chat/services/chatService.js` is the only frontend module that
-  knows the chat endpoint exists, and maps between the UI view model
-  (`sender`/`message`) and the API contract (`role`/`content`).
-- `src/shared/api/httpClient.js` wraps `fetch` with a timeout and a single error
-  shape.
+- `src/App.jsx` is a composition root only: it renders `ChatPage` and delegates
+  the authenticated shell to the page.
+- `src/pages/ChatPage.jsx` wires the conversation, request, preferences, and
+  theme hooks into the sidebar, transcript, composer, and settings components.
+- `src/hooks/useConversations.js` owns the persisted conversation list, the
+  active selection, and the rename/archive/delete actions, and cancels in-flight
+  work on unmount; `src/hooks/useChatRequest.js` owns the network lifecycle of a
+  reply, including streaming, cancellation, and retry.
+- `src/services/chatService.js` is the only frontend module that knows the chat
+  endpoint exists, and maps between the UI view model (`sender`/`message`) and
+  the API contract (`role`/`content`); `src/services/apiClient.js` wraps `fetch`
+  with a timeout and a single error shape.
 - `src/components/input/Composer.jsx` and the chat presentation components
-  report user actions while feature hooks and services manage application state.
+  report user actions while the page and hooks manage application state.
 - `server/` provides the Express API, provider abstraction, Clerk authentication,
   PostgreSQL persistence, and private conversation-file operations described
   below. `supersimpledev` has been removed from the project entirely.
@@ -187,6 +190,12 @@ server/
     decide when approved web sources are useful, retrieve bounded page excerpts
     through a server-side search provider, protect against prompt injection,
     and return clearly labeled web citations.
+12. **Phase 11 — Extensible controlled AI tools:** register server-owned tools
+    with validated input schemas, permission checks, and non-executable
+    handlers; ship calculator, weather, document search, web search, and
+    authenticated todo tools.
+13. **Phase 12 — Voice and multimodal images:** add browser speech input/output
+    and vision-capable image understanding through the selected model.
 
 For every phase, run the relevant tests plus `npm run build` and `npm run lint`.
 Backend phases should add corresponding server tests and health/integration
@@ -351,6 +360,17 @@ create todos only on explicit user request. Todo data is introduced by
 migration 008. Future tools can be added by registering a schema, permissions,
 and handler; arbitrary URL access, JavaScript, and shell execution are not part
 of the tool contract.
+
+## Phase 12 — Voice and multimodal images (complete)
+
+Browser-native speech recognition dictates into the editable composer draft, and
+speech synthesis can read replies aloud. Dictated text is never sent
+automatically and both features degrade gracefully where the browser speech APIs
+are unavailable. Image attachments are validated server-side, stored privately,
+and forwarded only to a selected model whose registry entry advertises
+`supportsVision`; each provider adapter maps normalized image content into its
+own request format. Models without vision reject images rather than silently
+dropping them.
 
 ## Phase 0 validation
 

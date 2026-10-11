@@ -57,6 +57,8 @@ export function createConversationsRouter({
     asyncHandler(controller.rename),
   );
   router.delete('/:id', validateId, asyncHandler(controller.remove));
+  router.post('/:id/archive', validateId, asyncHandler(controller.archive));
+  router.post('/:id/unarchive', validateId, asyncHandler(controller.unarchive));
   router.post(
     '/:id/messages',
     validateId,

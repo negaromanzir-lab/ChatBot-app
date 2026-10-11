@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { deriveConversationTitle } from '../utils/text.js';
 import {
   createConversation as createConversationRequest,
@@ -7,28 +7,37 @@ import {
   importLocalHistory,
   listConversations,
   renameConversation as renameConversationRequest,
+  setConversationArchived as setConversationArchivedRequest,
 } from '../services/conversationService.js';
 
 export function useConversations(user) {
   const [state, setState] = useState({ conversations: [], activeId: null });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
+  // Toggling the archive filter refetches, but it must not replace the page with
+  // the initial loading state, so the spinner is tied to the signed-in user.
+  const loadedUserIdRef = useRef(null);
 
   useEffect(() => {
     let active = true;
     if (!user?.id) {
+      loadedUserIdRef.current = null;
       setIsLoading(false);
       return () => {
         active = false;
       };
     }
-    setIsLoading(true);
+    if (loadedUserIdRef.current !== user.id) {
+      loadedUserIdRef.current = user.id;
+      setIsLoading(true);
+    }
     setError(null);
 
     async function load() {
       try {
         const importedActiveId = await importLocalHistory(user.id);
-        let conversations = await listConversations();
+        let conversations = await listConversations({ includeArchived: showArchived });
         if (importedActiveId) {
           const activeConversation = await getConversation(importedActiveId);
           conversations = conversations.map((conversation) =>
@@ -56,7 +65,7 @@ export function useConversations(user) {
     return () => {
       active = false;
     };
-  }, [user?.id]);
+  }, [user?.id, showArchived]);
 
   const activeConversation = useMemo(
     () => state.conversations.find(({ id }) => id === state.activeId) ?? null,
@@ -139,6 +148,44 @@ export function useConversations(user) {
     }
   }, []);
 
+  const applyArchived = useCallback(async (id, archived) => {
+    setError(null);
+    try {
+      const updated = await setConversationArchivedRequest(id, archived);
+      setState((current) => {
+        const conversations = current.conversations.map((item) =>
+          item.id === id ? { ...item, archivedAt: updated.archivedAt } : item,
+        );
+        const visible = showArchived
+          ? conversations
+          : conversations.filter((item) => !item.archivedAt);
+        const activeId =
+          current.activeId === id && !visible.some((item) => item.id === id)
+            ? (visible[0]?.id ?? null)
+            : current.activeId;
+        return { conversations: visible, activeId };
+      });
+    } catch (caught) {
+      setError(
+        caught.message
+          || `Could not ${archived ? 'archive' : 'unarchive'} this conversation.`,
+      );
+    }
+  }, [showArchived]);
+
+  const archiveConversation = useCallback(
+    (id) => applyArchived(id, true),
+    [applyArchived],
+  );
+  const unarchiveConversation = useCallback(
+    (id) => applyArchived(id, false),
+    [applyArchived],
+  );
+
+  const toggleShowArchived = useCallback(() => {
+    setShowArchived((current) => !current);
+  }, []);
+
   const removeAllConversations = useCallback(async () => {
     setError(null);
     try {
@@ -199,6 +246,10 @@ export function useConversations(user) {
     createConversation,
     deleteConversation,
     renameConversation,
+    archiveConversation,
+    unarchiveConversation,
+    showArchived,
+    toggleShowArchived,
     removeAllConversations,
     setActiveMessages,
     updateConversationInfo,

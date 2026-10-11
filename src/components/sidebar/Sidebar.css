@@ -107,6 +107,37 @@
   color: var(--color-text-muted);
 }
 
+.sidebar__filter {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 12px 6px;
+}
+
+.sidebar__filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.sidebar__filter-toggle:hover {
+  background-color: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.sidebar__filter-toggle[aria-pressed='true'] {
+  border-color: var(--color-border-strong);
+  background-color: var(--color-surface-active);
+  color: var(--color-text);
+}
+
 .sidebar__group + .sidebar__group {
   margin-top: 14px;
 }
@@ -139,7 +170,7 @@
   gap: 8px;
   flex: 1;
   min-width: 0;
-  padding: 9px 54px 9px 9px;
+  padding: 9px 82px 9px 9px;
   border: none;
   border-radius: var(--radius-sm);
   background-color: transparent;
@@ -185,6 +216,13 @@
 
 .sidebar__row-rename {
   position: absolute;
+  right: 60px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.sidebar__row-archive {
+  position: absolute;
   right: 32px;
   opacity: 0;
   transition: opacity var(--transition-fast);
@@ -192,6 +230,8 @@
 
 .sidebar__row:hover .sidebar__row-rename,
 .sidebar__row:focus-within .sidebar__row-rename,
+.sidebar__row:hover .sidebar__row-archive,
+.sidebar__row:focus-within .sidebar__row-archive,
 .sidebar__row:hover .sidebar__row-delete,
 .sidebar__row:focus-within .sidebar__row-delete {
   opacity: 1;
@@ -199,6 +239,11 @@
 
 .sidebar__row-delete:hover {
   color: var(--color-danger);
+}
+
+.sidebar__row--archived .sidebar__row-button {
+  color: var(--color-text-muted);
+  font-style: italic;
 }
 
 .sidebar__footer {
@@ -228,6 +273,7 @@
 
 @media (hover: none) {
   .sidebar__row-rename,
+  .sidebar__row-archive,
   .sidebar__row-delete {
     opacity: 1;
   }

@@ -88,6 +88,14 @@ const ICONS = {
   pencil: {
     paths: ['M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z', 'M14.5 6.5l3 3'],
   },
+  archive: {
+    rects: [{ x: 3, y: 4, width: 18, height: 4, rx: 1 }],
+    paths: ['M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8', 'M10 12h4'],
+  },
+  unarchive: {
+    rects: [{ x: 3, y: 4, width: 18, height: 4, rx: 1 }],
+    paths: ['M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8', 'M12 16v-5', 'M9.5 13.5L12 11l2.5 2.5'],
+  },
   alert: {
     circle: { cx: 12, cy: 12, r: 9 },
     paths: ['M12 7.5v5.5', 'M12 16.5h.01'],

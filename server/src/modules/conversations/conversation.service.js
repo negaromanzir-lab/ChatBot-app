@@ -20,8 +20,8 @@ export function createConversationService({
     return repository.create(userId, normalizeTitle(title));
   }
 
-  async function list(userId) {
-    return repository.list(userId);
+  async function list(userId, options) {
+    return repository.list(userId, options);
   }
 
   async function get(userId, conversationId) {
@@ -30,6 +30,10 @@ export function createConversationService({
 
   async function rename(userId, conversationId, title) {
     return repository.rename(userId, conversationId, normalizeTitle(title));
+  }
+
+  async function setArchived(userId, conversationId, archived) {
+    return repository.setArchived(userId, conversationId, archived);
   }
 
   async function remove(userId, conversationId) {
@@ -54,7 +58,7 @@ export function createConversationService({
     });
   }
 
-  return { create, list, get, rename, remove, addMessage, updateUserMessage };
+  return { create, list, get, rename, setArchived, remove, addMessage, updateUserMessage };
 }
 
 function normalizeTitle(title) {

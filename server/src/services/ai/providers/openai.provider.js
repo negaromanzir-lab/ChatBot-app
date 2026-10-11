@@ -1,6 +1,7 @@
 import ApiError from '../../../utils/ApiError.js';
 import config from '../../../config/env.js';
 import logger from '../../../config/logger.js';
+import { normalizeUsage } from './providerUtils.js';
 
 const DEFAULT_SYSTEM_INSTRUCTION =
   'You are a helpful, concise, and safe assistant. Answer directly and clearly.';
@@ -141,7 +142,8 @@ export function createOpenAIProvider(overrides = {}) {
         model: settings.model,
         messages: createPayloadMessages(messages, systemInstruction),
         max_tokens: settings.maxTokens,
-        ...(stream ? { stream: true } : {}),
+        // `include_usage` makes the final streamed chunk carry token counts.
+        ...(stream ? { stream: true, stream_options: { include_usage: true } } : {}),
       }),
     });
   }
@@ -189,7 +191,8 @@ export function createOpenAIProvider(overrides = {}) {
       );
     }
 
-    return { role: 'assistant', content };
+    const usage = normalizeUsage(payload?.usage);
+    return { role: 'assistant', content, ...(usage ? { usage } : {}) };
   }
 
   async function* streamResponse(messages, options = {}) {
@@ -251,6 +254,8 @@ export function createOpenAIProvider(overrides = {}) {
             );
           }
 
+          const eventUsage = normalizeUsage(event?.usage);
+          if (eventUsage) options.onUsage?.(eventUsage);
           const content = event?.choices?.[0]?.delta?.content;
           if (typeof content === 'string' && content.length > 0) yield content;
         }
@@ -275,6 +280,8 @@ export function createOpenAIProvider(overrides = {}) {
               { cause: error },
             );
           }
+          const eventUsage = normalizeUsage(event?.usage);
+          if (eventUsage) options.onUsage?.(eventUsage);
           const content = event?.choices?.[0]?.delta?.content;
           if (typeof content === 'string' && content.length > 0) yield content;
         }

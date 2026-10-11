@@ -69,9 +69,11 @@ server-only `CLERK_SECRET_KEY` to the frontend.
 | `GET` | `/api/models` | List enabled safe model IDs for the signed-in user |
 | `POST` | `/api/files` | Upload one file with a `conversationId` multipart field |
 | `POST` | `/api/conversations` | Create a conversation |
-| `GET` | `/api/conversations` | List the signed-in user's conversations |
+| `GET` | `/api/conversations` | List the signed-in user's active conversations (`?includeArchived=true` also returns archived ones) |
 | `GET` | `/api/conversations/:id` | Open a conversation and its messages |
 | `PATCH` | `/api/conversations/:id` | Rename a conversation |
+| `POST` | `/api/conversations/:id/archive` | Archive a conversation without deleting it |
+| `POST` | `/api/conversations/:id/unarchive` | Restore an archived conversation |
 | `DELETE` | `/api/conversations/:id` | Delete a conversation and its messages |
 | `POST` | `/api/conversations/:id/messages` | Append a user or assistant message |
 | `PATCH` | `/api/conversations/:id/messages/:messageId` | Edit a user message and remove later turns |
@@ -81,9 +83,11 @@ server-only `CLERK_SECRET_KEY` to the frontend.
 | `DELETE` | `/api/conversations/:id/uploads/:uploadId` | Delete an authorized file |
 
 The first user message generates a useful title; the sidebar also supports renaming.
-Edit and resend is available on the latest user turn; it updates that message and
-discards later messages before generating the replacement answer. Search filters
-conversation titles in the sidebar. Keyboard shortcuts are `Ctrl/⌘+K` to focus
+Archive hides a conversation from the default history list without deleting its
+messages or files; the **Show archived** toggle reveals archived conversations and
+restores them. Edit and resend is available on the latest user turn; it updates that
+message and discards later messages before generating the replacement answer. Search
+filters conversation titles in the sidebar. Keyboard shortcuts are `Ctrl/⌘+K` to focus
 conversation search, `Ctrl/⌘+Shift+O` for a new chat, and `Ctrl/⌘+,` for settings.
 
 ### Conversation files
@@ -243,6 +247,23 @@ Response:
 }
 ```
 
+When the provider reports token counts, the reply includes a `usage` object and
+the server logs the same counts without recording prompt or reply content:
+
+```json
+{
+  "message": {
+    "role": "assistant",
+    "content": "Hello! How can I help?",
+    "usage": { "inputTokens": 12, "outputTokens": 8, "totalTokens": 20 }
+  }
+}
+```
+
+Streaming clients receive the same `usage` object in the final `done` event.
+Vendors that do not report usage omit the field rather than sending fabricated
+zero counts.
+
 ### `GET /api/health`
 
 Returns `{ status, uptimeSeconds, provider, timestamp }`. Deliberately exposes no
@@ -299,41 +320,43 @@ log line, so a user-reported failure can be traced directly.
 ├── vite.config.js        # Vite config, dev proxy, and Vitest config
 ├── eslint.config.js      # Flat config: browser rules for src/, Node rules for server/
 ├── .env.example          # Environment template (empty values only)
-├── src/
+├── src/                  # React frontend
 │   ├── main.jsx
-│   ├── App.jsx           # Composition root; no business logic
-│   ├── App.test.jsx
-│   ├── shared/api/
-│   │   └── httpClient.js # fetch wrapper: timeout, JSON handling, one error shape
-│   ├── features/chat/
-│   │   ├── hooks/
-│   │   │   └── useChatConversation.js   # Owns messages, pending and error state
-│   │   └── services/
-│   │       ├── chatService.js          # Only module that knows the endpoint exists
-│   │       └── chatService.test.js
-│   └── components/       # Presentational: ChatInput, ChatMessages, ChatMessage
+│   ├── App.jsx           # Composition root; delegates to pages and hooks
+│   ├── App.test.jsx      # Integration tests through the real component tree
+│   ├── pages/
+│   │   └── ChatPage.jsx  # Wires hooks, sidebar, composer, and settings together
+│   ├── hooks/            # useConversations, useChatRequest, useAuth, useTheme, …
+│   ├── services/         # apiClient, chatService, conversationService, settingsService
+│   ├── components/       # auth, chat, input, layout, message, settings, sidebar, ui
+│   └── utils/            # Pure helpers (date, id, text)
 └── server/
     ├── src/
     │   ├── server.js     # Process entry: listen, timeouts, graceful shutdown
     │   ├── app.js        # Express app factory (no listen) so routes are testable
     │   ├── config/       # env.js (validated config), logger.js (pino + redaction)
-    │   ├── routes/       # index.js (mounts /api, /health), chat.routes.js
+    │   ├── routes/       # Mounts /api: chat, conversations, settings, files, models
     │   ├── controllers/  # chat.controller.js — HTTP in, HTTP out
-    │   ├── services/ai/  # chat.service.js + providers/
-    │   ├── middleware/   # validate.js, rateLimit.js, errorHandler.js
+    │   ├── middleware/   # auth, validate, rateLimit, quota, errorHandler
+    │   ├── modules/      # Domain modules: conversations, uploads, settings, rag,
+    │   │                 #   usage, todos, web-search, weather, auth
+    │   ├── services/ai/  # chat.service.js, modelRegistry.js, providers/, tools/
+    │   ├── db/           # pool.js and versioned SQL migrations (001…009)
     │   └── utils/        # ApiError.js, asyncHandler.js
-    └── tests/            # Route and provider tests
+    └── tests/            # Route, service, repository, and provider tests
 ```
 
 ## How it works
 
 The frontend keeps its own view-model shape (`{ id, sender, message }`, where `sender` is
 `user` or `robot`) and converts to the API contract (`{ role, content }`) at the service
-boundary in `src/features/chat/services/chatService.js`. That keeps the backend contract
-from leaking into components.
+boundary in `src/services/chatService.js`. That keeps the backend contract from leaking
+into components.
 
-`useChatConversation` owns the conversation, the pending flag, and the error state.
-`ChatInput` and `ChatMessages` are presentational: they render state and report intent.
+`useConversations` owns the persisted conversation list, the active selection, and the
+rename/archive/delete actions; `useChatRequest` owns the network lifecycle of a reply
+(streaming, cancellation, retry). `ChatPage` wires both hooks into presentational
+components, which render state and report intent.
 
 On the server, a request flows:
 

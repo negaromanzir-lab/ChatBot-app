@@ -118,6 +118,31 @@ export async function* readSseData(response, provider, { signal, timeoutMs } = {
   }
 }
 
+/**
+ * Normalizes the per-vendor token-usage reports into one shape.
+ *
+ * Providers expose usage differently (`prompt_tokens`/`completion_tokens` on
+ * OpenAI, `usageMetadata.promptTokenCount` on Gemini, `input_tokens`/
+ * `output_tokens` on Claude). Only fields the vendor actually reported are
+ * included, and `null` is returned when nothing usable was present, so callers
+ * never print fabricated zero counts.
+ */
+export function normalizeUsage(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const input = raw.prompt_tokens ?? raw.promptTokenCount ?? raw.input_tokens;
+  const output = raw.completion_tokens ?? raw.candidatesTokenCount ?? raw.output_tokens;
+  const total = raw.total_tokens ?? raw.totalTokenCount
+    ?? (Number.isFinite(input) && Number.isFinite(output) ? input + output : undefined);
+
+  const usage = {};
+  if (Number.isFinite(input)) usage.inputTokens = input;
+  if (Number.isFinite(output)) usage.outputTokens = output;
+  if (Number.isFinite(total)) usage.totalTokens = total;
+
+  return Object.keys(usage).length ? usage : null;
+}
+
 export function parseSseJson(data, provider) {
   try {
     return JSON.parse(data);

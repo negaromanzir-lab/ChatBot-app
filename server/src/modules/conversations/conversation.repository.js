@@ -8,6 +8,7 @@ function mapConversation(row) {
     title: row.title,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    archivedAt: row.archived_at ?? null,
   };
 }
 
@@ -29,19 +30,20 @@ export function createConversationRepository({ databasePool } = {}) {
       const result = await db.query(
         `INSERT INTO conversations (user_id, title)
          VALUES ($1, $2)
-         RETURNING id, user_id, title, created_at, updated_at`,
+         RETURNING id, user_id, title, created_at, updated_at, archived_at`,
         [userId, title],
       );
       return mapConversation(result.rows[0]);
     },
 
-    async list(userId) {
+    async list(userId, { includeArchived = false } = {}) {
       const result = await db.query(
-        `SELECT c.id, c.user_id, c.title, c.created_at, c.updated_at,
+        `SELECT c.id, c.user_id, c.title, c.created_at, c.updated_at, c.archived_at,
                 COUNT(m.id)::int AS message_count
          FROM conversations c
          LEFT JOIN messages m ON m.conversation_id = c.id
          WHERE c.user_id = $1
+           ${includeArchived ? '' : 'AND c.archived_at IS NULL'}
          GROUP BY c.id
          ORDER BY c.updated_at DESC, c.id DESC`,
         [userId],
@@ -54,7 +56,7 @@ export function createConversationRepository({ databasePool } = {}) {
 
     async findById(userId, conversationId) {
       const conversationResult = await db.query(
-        `SELECT id, user_id, title, created_at, updated_at
+        `SELECT id, user_id, title, created_at, updated_at, archived_at
          FROM conversations WHERE id = $1 AND user_id = $2`,
         [conversationId, userId],
       );
@@ -79,8 +81,19 @@ export function createConversationRepository({ databasePool } = {}) {
         `UPDATE conversations
          SET title = $3, updated_at = NOW()
          WHERE id = $1 AND user_id = $2
-         RETURNING id, user_id, title, created_at, updated_at`,
+         RETURNING id, user_id, title, created_at, updated_at, archived_at`,
         [conversationId, userId, title],
+      );
+      return mapConversation(result.rows[0]);
+    },
+
+    async setArchived(userId, conversationId, archived) {
+      const result = await db.query(
+        `UPDATE conversations
+         SET archived_at = CASE WHEN $3 THEN NOW() ELSE NULL END
+         WHERE id = $1 AND user_id = $2
+         RETURNING id, user_id, title, created_at, updated_at, archived_at`,
+        [conversationId, userId, archived],
       );
       return mapConversation(result.rows[0]);
     },
@@ -145,7 +158,7 @@ export function createConversationRepository({ databasePool } = {}) {
           `UPDATE conversations
            SET title = COALESCE($3, title), updated_at = NOW()
            WHERE id = $1 AND user_id = $2
-           RETURNING id, user_id, title, created_at, updated_at`,
+           RETURNING id, user_id, title, created_at, updated_at, archived_at`,
           [conversationId, userId, generatedTitle],
         );
         await client.query('COMMIT');
@@ -215,7 +228,7 @@ export function createConversationRepository({ databasePool } = {}) {
                END,
                updated_at = NOW()
            WHERE id = $1 AND user_id = $4
-           RETURNING id, user_id, title, created_at, updated_at`,
+           RETURNING id, user_id, title, created_at, updated_at, archived_at`,
           [conversationId, messageId, title, userId],
         );
         await client.query('COMMIT');

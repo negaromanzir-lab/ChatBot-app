@@ -20,12 +20,14 @@ function toUiConversation(conversation) {
     title: conversation.title,
     createdAt: new Date(conversation.createdAt).getTime(),
     updatedAt: new Date(conversation.updatedAt).getTime(),
+    archivedAt: conversation.archivedAt ? new Date(conversation.archivedAt).getTime() : null,
     messages: conversation.messages?.map(toUiMessage) ?? [],
   };
 }
 
-export async function listConversations() {
-  const payload = await apiRequest('/conversations');
+export async function listConversations({ includeArchived = false } = {}) {
+  const query = includeArchived ? '?includeArchived=true' : '';
+  const payload = await apiRequest(`/conversations${query}`);
   return payload.conversations.map(toUiConversation);
 }
 
@@ -47,6 +49,15 @@ export async function renameConversation(id, title) {
     method: 'PATCH',
     body: { title },
   });
+  return toUiConversation(payload.conversation);
+}
+
+export async function setConversationArchived(id, archived) {
+  const action = archived ? 'archive' : 'unarchive';
+  const payload = await apiRequest(
+    `/conversations/${encodeURIComponent(id)}/${action}`,
+    { method: 'POST' },
+  );
   return toUiConversation(payload.conversation);
 }
 

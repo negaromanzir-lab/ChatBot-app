@@ -4,6 +4,7 @@ import {
   createRequestSignal,
   mapProviderRequestError,
   mapProviderStatus,
+  normalizeUsage,
   parseSseJson,
   readSseData,
 } from './providerUtils.js';
@@ -115,7 +116,8 @@ export function createGeminiProvider(overrides = {}) {
         'The AI provider returned an empty response.',
       );
     }
-    return { role: 'assistant', content };
+    const usage = normalizeUsage(result?.usageMetadata);
+    return { role: 'assistant', content, ...(usage ? { usage } : {}) };
   }
 
   async function* streamResponse(messages, options = {}) {
@@ -126,6 +128,8 @@ export function createGeminiProvider(overrides = {}) {
       timeoutMs: settings.timeoutMs,
     })) {
       const event = parseSseJson(data, 'gemini');
+      const eventUsage = normalizeUsage(event?.usageMetadata);
+      if (eventUsage) options.onUsage?.(eventUsage);
       const content = event?.candidates?.[0]?.content?.parts
         ?.map((part) => part.text)
         .filter((text) => typeof text === 'string')

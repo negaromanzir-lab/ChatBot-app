@@ -16,6 +16,24 @@ import { createWeatherService } from '../../modules/weather/weather.service.js';
 import { createTodoService } from '../../modules/todos/todo.service.js';
 
 /**
+ * Records provider-reported token usage. Only counts are logged — never prompt
+ * or completion content — so a usage line can be retained without leaking the
+ * conversation.
+ */
+function logTokenUsage(providerName, usage) {
+  if (!usage) return;
+  logger.info(
+    {
+      provider: providerName,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      totalTokens: usage.totalTokens,
+    },
+    'AI provider token usage',
+  );
+}
+
+/**
  * Chat orchestration.
  *
  * Owns the provider instance and converts between the public API contract
@@ -424,6 +442,9 @@ export function createChatService({
       );
     }
 
+    const usage = reply.usage ?? null;
+    logTokenUsage(activeProvider.name, usage);
+
     logger.info(
       { provider: activeProvider.name, contentLength: reply.content.length },
       'Assistant reply generated',
@@ -432,6 +453,7 @@ export function createChatService({
     return {
       role: 'assistant',
       content: reply.content + formatCitations(documentCitations, webCitations),
+      ...(usage ? { usage } : {}),
     };
   }
 
@@ -469,7 +491,7 @@ export function createChatService({
     );
 
     let content = '';
-    const replyOptions = documentCitations.length || webCitations.length
+    const baseOptions = documentCitations.length || webCitations.length
       ? {
         ...options,
         systemInstruction: [
@@ -478,6 +500,13 @@ export function createChatService({
         ].filter(Boolean).join('\n\n'),
       }
       : options;
+    const replyOptions = {
+      ...baseOptions,
+      onUsage: (usage) => {
+        logTokenUsage(activeProvider.name, usage);
+        options.onUsage?.(usage);
+      },
+    };
     for await (const chunk of streamResponse.call(activeProvider, preparedMessages, replyOptions)) {
       if (typeof chunk !== 'string' || chunk.length === 0) continue;
       content += chunk;

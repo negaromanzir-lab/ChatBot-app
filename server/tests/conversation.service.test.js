@@ -55,4 +55,28 @@ describe('conversation service', () => {
       uploadService.removeStorageKeys.mock.invocationCallOrder[0],
     );
   });
+
+  it('passes archive options to the repository when listing', async () => {
+    const repository = { list: vi.fn().mockResolvedValue([]) };
+    const service = createConversationService({ repository });
+
+    await service.list('owner-id', { includeArchived: true });
+
+    expect(repository.list).toHaveBeenCalledWith('owner-id', { includeArchived: true });
+  });
+
+  it('archives and restores a conversation through the repository', async () => {
+    const repository = {
+      setArchived: vi.fn().mockResolvedValue({ id: 'conversation-id', archivedAt: new Date() }),
+    };
+    const service = createConversationService({ repository });
+
+    await service.setArchived('owner-id', 'conversation-id', true);
+
+    expect(repository.setArchived).toHaveBeenCalledWith(
+      'owner-id',
+      'conversation-id',
+      true,
+    );
+  });
 });

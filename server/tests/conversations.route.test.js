@@ -50,6 +50,7 @@ async function startServer() {
     list: vi.fn().mockResolvedValue([]),
     get: vi.fn().mockResolvedValue(null),
     rename: vi.fn().mockResolvedValue(null),
+    setArchived: vi.fn().mockResolvedValue(null),
     remove: vi.fn().mockResolvedValue(false),
     addMessage: vi.fn().mockResolvedValue(null),
     updateUserMessage: vi.fn().mockResolvedValue(null),
@@ -167,7 +168,9 @@ describe('Clerk authentication and conversation ownership', () => {
       clerkUserId: testUser.clerk_user_id,
       email: testUser.email,
     });
-    expect(conversationService.list).toHaveBeenCalledWith(testUser.id);
+    expect(conversationService.list).toHaveBeenCalledWith(testUser.id, {
+      includeArchived: false,
+    });
   });
 
   it('does not synchronize accounts using an unverified email address', async () => {
@@ -282,5 +285,66 @@ describe('Clerk authentication and conversation ownership', () => {
       { content: 'Edited prompt' },
     );
     expect((await response.json()).message.content).toBe('Edited prompt');
+  });
+
+  it('lists archived conversations only when asked', async () => {
+    const response = await request('/api/conversations?includeArchived=true');
+
+    expect(response.status).toBe(200);
+    expect(conversationService.list).toHaveBeenCalledWith(testUser.id, {
+      includeArchived: true,
+    });
+  });
+
+  it('archives and unarchives an owned conversation through the authenticated identity', async () => {
+    const conversationId = 'c0a80101-0000-4000-8000-000000000002';
+    conversationService.setArchived.mockResolvedValueOnce({
+      id: conversationId,
+      title: 'A useful title',
+      archivedAt: '2026-01-02T00:00:00.000Z',
+    });
+
+    const archived = await request(`/api/conversations/${conversationId}/archive`, {
+      method: 'POST',
+    });
+    expect(archived.status).toBe(200);
+    expect(conversationService.setArchived).toHaveBeenCalledWith(
+      testUser.id,
+      conversationId,
+      true,
+    );
+    expect((await archived.json()).conversation.archivedAt).toBe(
+      '2026-01-02T00:00:00.000Z',
+    );
+
+    conversationService.setArchived.mockResolvedValueOnce({
+      id: conversationId,
+      title: 'A useful title',
+      archivedAt: null,
+    });
+    const unarchived = await request(`/api/conversations/${conversationId}/unarchive`, {
+      method: 'POST',
+    });
+    expect(unarchived.status).toBe(200);
+    expect(conversationService.setArchived).toHaveBeenLastCalledWith(
+      testUser.id,
+      conversationId,
+      false,
+    );
+  });
+
+  it('returns not found when archiving a conversation the user does not own', async () => {
+    const foreignId = 'c0a80101-0000-4000-8000-000000000099';
+    conversationService.setArchived.mockResolvedValueOnce(null);
+
+    const response = await request(`/api/conversations/${foreignId}/archive`, {
+      method: 'POST',
+    });
+    expect(response.status).toBe(404);
+    expect(conversationService.setArchived).toHaveBeenCalledWith(
+      testUser.id,
+      foreignId,
+      true,
+    );
   });
 });

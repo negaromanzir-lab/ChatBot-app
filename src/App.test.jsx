@@ -79,6 +79,13 @@ vi.mock('./services/conversationService.js', () => ({
   downloadConversationFile: vi.fn(),
   deleteConversationFile: vi.fn(),
   renameConversation: vi.fn(),
+  setConversationArchived: vi.fn(async (id, archived) => ({
+    id,
+    title: 'New chat',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    archivedAt: archived ? Date.now() : null,
+  })),
 }));
 
 vi.mock('./services/modelService.js', () => ({
@@ -186,6 +193,15 @@ beforeEach(() => {
         message: message.message,
         createdAt: Date.now(),
       },
+    }),
+  );
+  vi.mocked(conversationService.setConversationArchived).mockImplementation(
+    async (id, archived) => ({
+      id,
+      title: 'New chat',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      archivedAt: archived ? Date.now() : null,
     }),
   );
   mockReply();
@@ -435,5 +451,54 @@ describe('App', () => {
     finishStream();
     expect(await screen.findByText('First and final')).toBeInTheDocument();
     expect(transcript().getAllByText('First and final')).toHaveLength(1);
+  });
+
+  it('archives a conversation and can reveal and restore it', async () => {
+    const conversation = {
+      id: 'archivable-conversation',
+      title: 'Archive me',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      archivedAt: null,
+      messages: [],
+    };
+    vi.mocked(conversationService.listConversations).mockResolvedValue([conversation]);
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Archive conversation: Archive me' }),
+    );
+    await waitFor(() => {
+      expect(conversationService.setConversationArchived).toHaveBeenCalledWith(
+        'archivable-conversation',
+        true,
+      );
+    });
+    // Archived conversations leave the default list.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: 'Archive conversation: Archive me' }),
+      ).not.toBeInTheDocument();
+    });
+
+    // Revealing archives reloads the list including archived conversations.
+    vi.mocked(conversationService.listConversations).mockResolvedValue([
+      { ...conversation, archivedAt: Date.now() },
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: /show archived/i }));
+    await waitFor(() => {
+      expect(conversationService.listConversations).toHaveBeenLastCalledWith({
+        includeArchived: true,
+      });
+    });
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Unarchive conversation: Archive me' }),
+    );
+    await waitFor(() => {
+      expect(conversationService.setConversationArchived).toHaveBeenLastCalledWith(
+        'archivable-conversation',
+        false,
+      );
+    });
   });
 });

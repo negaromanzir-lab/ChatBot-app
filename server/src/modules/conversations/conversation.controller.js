@@ -14,7 +14,9 @@ export function createConversationController({ conversationService } = {}) {
   }
 
   async function list(req, res) {
-    const conversations = await getService().list(req.user.id);
+    const conversations = await getService().list(req.user.id, {
+      includeArchived: req.query.includeArchived === 'true',
+    });
     res.status(200).json({ conversations });
   }
 
@@ -29,6 +31,26 @@ export function createConversationController({ conversationService } = {}) {
       req.user.id,
       req.params.id,
       req.body.title,
+    );
+    if (!conversation) throw notFound();
+    res.status(200).json({ conversation });
+  }
+
+  async function archive(req, res) {
+    const conversation = await getService().setArchived(
+      req.user.id,
+      req.params.id,
+      true,
+    );
+    if (!conversation) throw notFound();
+    res.status(200).json({ conversation });
+  }
+
+  async function unarchive(req, res) {
+    const conversation = await getService().setArchived(
+      req.user.id,
+      req.params.id,
+      false,
     );
     if (!conversation) throw notFound();
     res.status(200).json({ conversation });
@@ -61,7 +83,17 @@ export function createConversationController({ conversationService } = {}) {
     res.status(200).json(result);
   }
 
-  return { create, list, get, rename, remove, addMessage, updateMessage };
+  return {
+    create,
+    list,
+    get,
+    rename,
+    archive,
+    unarchive,
+    remove,
+    addMessage,
+    updateMessage,
+  };
 }
 
 function notFound() {

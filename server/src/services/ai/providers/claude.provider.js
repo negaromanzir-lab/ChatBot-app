@@ -4,6 +4,7 @@ import {
   createRequestSignal,
   mapProviderRequestError,
   mapProviderStatus,
+  normalizeUsage,
   parseSseJson,
   readSseData,
 } from './providerUtils.js';
@@ -112,21 +113,31 @@ export function createClaudeProvider(overrides = {}) {
         'The AI provider returned an empty response.',
       );
     }
-    return { role: 'assistant', content };
+    const usage = normalizeUsage(result?.usage);
+    return { role: 'assistant', content, ...(usage ? { usage } : {}) };
   }
 
   async function* streamResponse(messages, options = {}) {
     const response = await request(messages, { ...options, stream: true });
     await checkResponse(response);
+    let streamedUsage = null;
     for await (const data of readSseData(response, 'claude', {
       signal: options.signal,
       timeoutMs: settings.timeoutMs,
     })) {
       const event = parseSseJson(data, 'claude');
+      // input_tokens arrives on message_start, output_tokens on message_delta.
+      if (event?.type === 'message_start' && event.message?.usage) {
+        streamedUsage = { ...event.message.usage };
+      } else if (event?.type === 'message_delta' && event.usage) {
+        streamedUsage = { ...(streamedUsage ?? {}), ...event.usage };
+      }
       if (event?.type === 'content_block_delta' && typeof event.delta?.text === 'string') {
         yield event.delta.text;
       }
     }
+    const normalizedUsage = normalizeUsage(streamedUsage);
+    if (normalizedUsage) options.onUsage?.(normalizedUsage);
   }
 
   return { name: 'claude', generateResponse, streamResponse };
