@@ -74,12 +74,17 @@ server-only `CLERK_SECRET_KEY` to the frontend.
 | `PATCH` | `/api/conversations/:id` | Rename a conversation |
 | `DELETE` | `/api/conversations/:id` | Delete a conversation and its messages |
 | `POST` | `/api/conversations/:id/messages` | Append a user or assistant message |
+| `PATCH` | `/api/conversations/:id/messages/:messageId` | Edit a user message and remove later turns |
 | `GET` | `/api/conversations/:id/uploads` | List conversation file metadata |
 | `POST` | `/api/conversations/:id/uploads` | Upload one multipart `file` |
 | `GET` | `/api/conversations/:id/uploads/:uploadId` | Download an authorized file |
 | `DELETE` | `/api/conversations/:id/uploads/:uploadId` | Delete an authorized file |
 
 The first user message generates a useful title; the sidebar also supports renaming.
+Edit and resend is available on the latest user turn; it updates that message and
+discards later messages before generating the replacement answer. Search filters
+conversation titles in the sidebar. Keyboard shortcuts are `Ctrl/⌘+K` to focus
+conversation search, `Ctrl/⌘+Shift+O` for a new chat, and `Ctrl/⌘+,` for settings.
 
 ### Conversation files
 
@@ -97,6 +102,14 @@ sent only server-to-provider when the selected model advertises vision support.
 The provider adapters translate the same normalized text/image input to their
 own APIs. The upload path never executes uploaded files. Files are still
 available to download; removing a conversation also removes its private files.
+
+The composer also supports optional browser-native voice input and response
+playback. Dictated text is added to the editable message draft and uses the
+normal chat send path; it is never sent automatically. Speech features depend
+on the browser's speech APIs and are unavailable where those APIs are missing.
+Image attachments show previews and upload progress. The model catalog declares
+each vision model's supported image MIME types, and the server rejects images
+outside the selected model's capabilities.
 
 ### Document search (RAG)
 

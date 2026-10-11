@@ -69,4 +69,58 @@ describe('conversation repository', () => {
     expect(client.query).toHaveBeenLastCalledWith('COMMIT');
     expect(client.release).toHaveBeenCalledOnce();
   });
+
+  it('updates an owned user message and removes later turns in one transaction', async () => {
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+        .mockResolvedValueOnce({
+          rows: [{ id: 'conversation-id', user_id: 'owner-id', title: 'Old title' }],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({
+          rows: [{ id: 'message-id', role: 'user', created_at: new Date() }],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({ rows: [], rowCount: 2 })
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 'message-id',
+            conversation_id: 'conversation-id',
+            role: 'user',
+            content: 'Edited prompt',
+            created_at: new Date(),
+          }],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 'conversation-id',
+            user_id: 'owner-id',
+            title: 'Edited prompt',
+            created_at: new Date(),
+            updated_at: new Date(),
+          }],
+          rowCount: 1,
+        })
+        .mockResolvedValueOnce({ rows: [], rowCount: 0 }),
+      release: vi.fn(),
+    };
+    const databasePool = { connect: vi.fn().mockResolvedValue(client) };
+    const repository = createConversationRepository({ databasePool });
+
+    const result = await repository.updateUserMessage(
+      'owner-id',
+      'conversation-id',
+      'message-id',
+      { content: 'Edited prompt', title: 'Edited prompt' },
+    );
+
+    expect(client.query.mock.calls[1][1]).toEqual(['conversation-id', 'owner-id']);
+    expect(client.query.mock.calls[3][0]).toContain('DELETE FROM messages');
+    expect(result.message.content).toBe('Edited prompt');
+    expect(result.conversation.title).toBe('Edited prompt');
+    expect(client.query).toHaveBeenLastCalledWith('COMMIT');
+    expect(client.release).toHaveBeenCalledOnce();
+  });
 });

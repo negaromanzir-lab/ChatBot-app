@@ -16,6 +16,7 @@
 | 9 | Retrieval-Augmented Generation (RAG) | Complete |
 | 10 | Controlled optional web search | Complete |
 | 11 | Extensible controlled AI tool execution | Complete |
+| 12 | Voice interaction and multimodal image understanding | Complete |
 
 Conversations, upload metadata, and user settings are backed by PostgreSQL and
 scoped to authenticated accounts. File bytes are stored on the private local

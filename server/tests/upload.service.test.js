@@ -208,6 +208,27 @@ describe('file upload service', () => {
     expect(storage.read).not.toHaveBeenCalled();
   });
 
+  it('rejects image formats the selected model cannot consume', async () => {
+    const { repository, storage } = createFixtures();
+    repository.findForChat.mockResolvedValue([{
+      id: 'owned-file',
+      name: 'photo.gif',
+      contentType: 'image/gif',
+      size: 128,
+      extractedText: null,
+      storageKey: 'private-storage-key',
+    }]);
+    const service = createUploadService({ repository, storage });
+
+    await expect(service.getForChat(
+      'user-1',
+      'conversation-1',
+      ['owned-file'],
+      { supportsVision: true, imageMimeTypes: ['image/png'] },
+    )).rejects.toMatchObject({ code: 'AI_MODEL_UNSUPPORTED_IMAGE_FORMAT' });
+    expect(storage.read).not.toHaveBeenCalled();
+  });
+
   it('rejects disallowed types and mismatched file signatures before storage', async () => {
     const { repository, storage } = createFixtures();
     const service = createUploadService({ repository, storage });

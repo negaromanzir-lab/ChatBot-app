@@ -12,38 +12,38 @@
 
 :root {
   /* Surfaces, from furthest back to closest to the user. */
-  --color-bg: #ffffff;
-  --color-surface: #f7f7f8;
-  --color-surface-hover: #ececee;
-  --color-surface-active: #e2e2e6;
+  --color-bg: #fbfcfb;
+  --color-surface: #f3f6f5;
+  --color-surface-hover: #e9efed;
+  --color-surface-active: #e2ebe7;
   --color-elevated: #ffffff;
   --color-overlay: rgba(16, 16, 18, 0.4);
 
   /* Borders. Two tokens so a "subtle" divider stays quieter than a control edge. */
-  --color-border: #e4e4e7;
-  --color-border-strong: #d0d0d6;
+  --color-border: #e1e7e4;
+  --color-border-strong: #c9d4cf;
 
   /* Text. */
-  --color-text: #17171a;
-  --color-text-secondary: #5c5c63;
-  --color-text-muted: #8b8b93;
+  --color-text: #18221e;
+  --color-text-secondary: #59665f;
+  --color-text-muted: #818d86;
   --color-text-inverted: #ffffff;
 
   /* Accent. */
-  --color-accent: #0d8a6a;
-  --color-accent-hover: #0b7359;
-  --color-accent-soft: rgba(13, 138, 106, 0.1);
+  --color-accent: #147b5e;
+  --color-accent-hover: #10674f;
+  --color-accent-soft: rgba(20, 123, 94, 0.1);
   --color-danger: #c0392f;
   --color-danger-soft: #fdecea;
 
   /* Message bubbles. */
-  --color-bubble-user: #f0f4f9;
-  --color-bubble-user-text: #17171a;
+  --color-bubble-user: #edf3f0;
+  --color-bubble-user-text: #18221e;
   --color-bubble-assistant: transparent;
 
   /* Code. */
-  --color-code-bg: #f6f7f9;
-  --color-code-border: #e6e8ec;
+  --color-code-bg: #f5f7f6;
+  --color-code-border: #e1e7e4;
   --color-code-text: #1f2430;
   --color-code-inline-bg: rgba(120, 128, 145, 0.14);
 
@@ -62,9 +62,9 @@
   --syntax-addition: #1a7f4b;
 
   /* Shape and motion. */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
   --radius-full: 999px;
   --shadow-sm: 0 1px 2px rgba(16, 16, 18, 0.06);
   --shadow-md: 0 4px 16px rgba(16, 16, 18, 0.1);
@@ -148,12 +148,32 @@ body {
   margin: 0;
   background-color: var(--color-bg);
   color: var(--color-text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
-    'Noto Sans', sans-serif;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    Helvetica, Arial, 'Noto Sans', sans-serif;
   font-size: 15px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+}
+
+* {
+  scrollbar-color: var(--color-border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.app-loading {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  padding: 24px;
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  text-align: center;
 }
 
 button {

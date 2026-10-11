@@ -52,6 +52,7 @@ async function startServer() {
     rename: vi.fn().mockResolvedValue(null),
     remove: vi.fn().mockResolvedValue(false),
     addMessage: vi.fn().mockResolvedValue(null),
+    updateUserMessage: vi.fn().mockResolvedValue(null),
   };
   settingsService = {
     get: vi.fn().mockResolvedValue({
@@ -258,5 +259,28 @@ describe('Clerk authentication and conversation ownership', () => {
       { role: 'user', content: 'What is PostgreSQL?' },
     );
     expect((await response.json()).conversation.title).toBe('What is PostgreSQL?');
+  });
+
+  it('updates an owned user message through the authenticated identity', async () => {
+    const conversationId = 'c0a80101-0000-4000-8000-000000000002';
+    const messageId = 'c0a80101-0000-4000-8000-000000000003';
+    conversationService.updateUserMessage.mockResolvedValueOnce({
+      conversation: { id: conversationId, title: 'Edited title' },
+      message: { id: messageId, conversationId, role: 'user', content: 'Edited prompt' },
+    });
+
+    const response = await request(
+      `/api/conversations/${conversationId}/messages/${messageId}`,
+      { method: 'PATCH', body: { content: 'Edited prompt', user_id: 'attacker' } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(conversationService.updateUserMessage).toHaveBeenCalledWith(
+      testUser.id,
+      conversationId,
+      messageId,
+      { content: 'Edited prompt' },
+    );
+    expect((await response.json()).message.content).toBe('Edited prompt');
   });
 });

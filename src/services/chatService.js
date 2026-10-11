@@ -105,6 +105,7 @@ export async function streamAssistantReply({
   model,
   fileIds = [],
   onDelta = () => {},
+  onToolStatus = () => {},
 } = {}) {
   const history = Array.isArray(messages) ? messages.slice(-MAX_HISTORY_MESSAGES) : [];
   const response = await apiStream('/chat', {
@@ -162,6 +163,11 @@ export async function streamAssistantReply({
           details: event.error?.requestId,
         },
       );
+    }
+
+    if (event.type === 'tool' && typeof event.name === 'string') {
+      onToolStatus(event.name);
+      return;
     }
 
     if (

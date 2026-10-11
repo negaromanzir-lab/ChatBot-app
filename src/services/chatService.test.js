@@ -182,6 +182,22 @@ describe('chatService', () => {
       expect(reply.id).toBe(onDelta.mock.calls[0][1].id);
     });
 
+    it('reports controlled tool activity received in the stream', async () => {
+      stubFetch(sse(
+        { type: 'tool', name: 'searchWeb' },
+        { type: 'delta', content: 'Here are the latest sources.' },
+        { type: 'done', message: { role: 'assistant', content: 'Here are the latest sources.' } },
+      ));
+      const onToolStatus = vi.fn();
+
+      await streamAssistantReply({
+        messages: [{ sender: 'user', message: 'What changed recently?' }],
+        onToolStatus,
+      });
+
+      expect(onToolStatus).toHaveBeenCalledWith('searchWeb');
+    });
+
     it('sends a selected model identifier when streaming', async () => {
       const fetchMock = stubFetch(
         sse(

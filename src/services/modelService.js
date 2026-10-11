@@ -11,7 +11,9 @@ export async function listAvailableModels() {
         typeof model?.id !== 'string'
         || typeof model?.label !== 'string'
         || typeof model?.provider !== 'string'
-        || typeof model?.supportsVision !== 'boolean',
+        || typeof model?.supportsVision !== 'boolean'
+        || !Array.isArray(model?.imageMimeTypes)
+        || model.imageMimeTypes.some((mimeType) => typeof mimeType !== 'string'),
     )
   ) {
     throw new Error('The server returned an invalid model list.');

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Composer } from './Composer.jsx';
 
 describe('Composer attachments', () => {
@@ -53,5 +53,74 @@ describe('Composer attachments', () => {
     );
 
     expect(screen.getByRole('status')).toHaveTextContent('Search setup required');
+  });
+
+  it('shows image previews and only accepts formats supported by the selected model', () => {
+    render(
+      <Composer
+        imageMimeTypes={['image/jpeg', 'image/png', 'image/gif']}
+        uploads={[{
+          id: 'image-1',
+          name: 'photo.gif',
+          contentType: 'image/gif',
+          size: 24,
+          previewUrl: 'blob:preview',
+        }]}
+      />,
+    );
+
+    expect(screen.getByAltText('Preview of photo.gif')).toHaveAttribute('src', 'blob:preview');
+    expect(screen.getByLabelText('Select files to attach')).toHaveAttribute(
+      'accept',
+      '.pdf,.docx,.txt,.md,.csv,.jpg,.jpeg,.png,.gif',
+    );
+  });
+
+  it('keeps voice transcripts editable and does not send them automatically', async () => {
+    let recognition;
+    class FakeRecognition {
+      start = vi.fn();
+      stop = vi.fn();
+      constructor() {
+        recognition = this;
+      }
+    }
+    Object.defineProperty(window, 'SpeechRecognition', {
+      configurable: true,
+      value: FakeRecognition,
+    });
+    const onSend = vi.fn();
+    render(<Composer onSend={onSend} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start voice input' }));
+    recognition.onresult({
+      results: [{ isFinal: true, 0: { transcript: 'Describe this image' } }],
+    });
+
+    await waitFor(() => expect(screen.getByLabelText('Message')).toHaveValue('Describe this image'));
+    expect(onSend).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'Edited transcript' } });
+    expect(screen.getByLabelText('Message')).toHaveValue('Edited transcript');
+  });
+
+  it('disables speech input when the browser API is unavailable', () => {
+    Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: undefined });
+    Object.defineProperty(window, 'webkitSpeechRecognition', { configurable: true, value: undefined });
+    render(<Composer />);
+
+    expect(screen.getByRole('button', { name: 'Start voice input' })).toBeDisabled();
+    expect(screen.getByText(/Voice input unavailable/)).toBeInTheDocument();
+  });
+
+  it('displays upload progress accessibly', () => {
+    render(
+      <Composer
+        isUploading
+        uploadProgress={{ name: 'photo.png', percent: 48 }}
+      />,
+    );
+
+    expect(screen.getByLabelText('Uploading photo.png')).toHaveValue(48);
+    expect(screen.getByText('Uploading photo.png… 48%')).toBeInTheDocument();
   });
 });

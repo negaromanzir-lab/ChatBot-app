@@ -124,7 +124,10 @@ export function createChatService({
       userId,
       conversationId,
       fileIds,
-      { supportsVision },
+      {
+        supportsVision,
+        ...(context.imageMimeTypes ? { imageMimeTypes: context.imageMimeTypes } : {}),
+      },
     );
     const documents = files.filter(
       (file) => !file.contentType.startsWith('image/') && file.extractedText,
@@ -283,7 +286,10 @@ export function createChatService({
         options.userId,
         options.conversationId,
         options.fileIds,
-        { supportsVision: model.supportsVision },
+        {
+          supportsVision: model.supportsVision,
+          ...(model.imageMimeTypes ? { imageMimeTypes: model.imageMimeTypes } : {}),
+        },
       )
       : [];
     const images = files.filter((file) => file.contentType.startsWith('image/'));
@@ -432,6 +438,9 @@ export function createChatService({
   async function* streamAssistantReply(messages, options = {}) {
     const { model, provider: activeProvider } = getSelection(options.model);
     const toolExecution = await decideTool(messages, activeProvider, options, model);
+    if (toolExecution.toolName) {
+      await options.onToolStatus?.(toolExecution.toolName);
+    }
     const {
       messages: preparedMessages,
       documentCitations,

@@ -14,8 +14,19 @@
 const FILLED = { fill: true };
 
 const ICONS = {
+  search: { circles: [{ cx: 10.8, cy: 10.8, r: 6.8 }], paths: ['m16 16 5 5'] },
   plus: { paths: ['M12 5v14', 'M5 12h14'] },
   send: { paths: ['M12 19V5', 'M5 12l7-7 7 7'] },
+  microphone: {
+    paths: [
+      'M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z',
+      'M19 10v1a7 7 0 0 1-14 0v-1',
+      'M12 18v4',
+      'M8 22h8',
+    ],
+  },
+  play: { ...FILLED, paths: ['M7 4.5v15l12-7.5z'] },
+  pause: { ...FILLED, paths: ['M7 5h4v14H7z', 'M15 5h4v14h-4z'] },
   attach: { paths: ['M21.4 11.1l-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8l9.2-9.2a3.7 3.7 0 0 1 5.2 5.2l-9.2 9.2a1.8 1.8 0 0 1-2.6-2.6l8.5-8.5'] },
   stop: { ...FILLED, paths: ['M6.5 7.5h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z'] },
   copy: {

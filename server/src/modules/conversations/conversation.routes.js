@@ -8,6 +8,7 @@ import { createConversationController } from './conversation.controller.js';
 import { createUploadRouter } from '../uploads/upload.routes.js';
 
 const idSchema = z.string().uuid();
+const messageIdSchema = z.string().uuid();
 const createSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
 });
@@ -61,6 +62,21 @@ export function createConversationsRouter({
     validateId,
     validate({ body: messageSchema }),
     asyncHandler(controller.addMessage),
+  );
+  router.patch(
+    '/:id/messages/:messageId',
+    validateId,
+    (req, _res, next) => {
+      const parsed = messageIdSchema.safeParse(req.params.messageId);
+      if (!parsed.success) {
+        return next(ApiError.badRequest('INVALID_MESSAGE_ID', 'Message id must be a UUID.'));
+      }
+      return next();
+    },
+    validate({ body: z.object({
+      content: z.string().trim().min(1).max(config.limits.maxContentLength),
+    }) }),
+    asyncHandler(controller.updateMessage),
   );
 
   return router;

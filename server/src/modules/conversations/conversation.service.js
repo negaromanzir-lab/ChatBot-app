@@ -47,7 +47,14 @@ export function createConversationService({
     });
   }
 
-  return { create, list, get, rename, remove, addMessage };
+  async function updateUserMessage(userId, conversationId, messageId, { content }) {
+    return repository.updateUserMessage(userId, conversationId, messageId, {
+      content,
+      title: deriveTitle(content),
+    });
+  }
+
+  return { create, list, get, rename, remove, addMessage, updateUserMessage };
 }
 
 function normalizeTitle(title) {

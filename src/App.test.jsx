@@ -39,6 +39,7 @@ vi.mock('./hooks/useAuth.js', () => ({
 }));
 
 vi.mock('./services/conversationService.js', () => ({
+  updateConversationMessage: vi.fn(),
   createConversationMessage: vi.fn(async (id, message) => ({
     conversation: { id, title: 'New chat', createdAt: Date.now(), updatedAt: Date.now() },
     message: {
@@ -84,8 +85,8 @@ vi.mock('./services/modelService.js', () => ({
   listAvailableModels: vi.fn().mockResolvedValue({
     defaultModelId: 'local-offline',
     models: [
-      { id: 'local-offline', label: 'Local offline', provider: 'local', supportsVision: false },
-      { id: 'openai-default', label: 'GPT (OpenAI)', provider: 'openai', supportsVision: true },
+      { id: 'local-offline', label: 'Local offline', provider: 'local', supportsVision: false, imageMimeTypes: [] },
+      { id: 'openai-default', label: 'GPT (OpenAI)', provider: 'openai', supportsVision: true, imageMimeTypes: ['image/jpeg', 'image/png', 'image/webp'] },
     ],
   }),
 }));
@@ -147,8 +148,8 @@ beforeEach(() => {
   vi.mocked(modelService.listAvailableModels).mockResolvedValue({
     defaultModelId: 'local-offline',
     models: [
-      { id: 'local-offline', label: 'Local offline', provider: 'local', supportsVision: false },
-      { id: 'openai-default', label: 'GPT (OpenAI)', provider: 'openai', supportsVision: true },
+      { id: 'local-offline', label: 'Local offline', provider: 'local', supportsVision: false, imageMimeTypes: [] },
+      { id: 'openai-default', label: 'GPT (OpenAI)', provider: 'openai', supportsVision: true, imageMimeTypes: ['image/jpeg', 'image/png', 'image/webp'] },
     ],
   });
   vi.mocked(settingsService.getUserSettings).mockResolvedValue({
@@ -277,6 +278,7 @@ describe('App', () => {
       expect(conversationService.uploadConversationFile).toHaveBeenCalledWith(
         'test-conversation',
         file,
+        { onProgress: expect.any(Function) },
       );
     });
     expect(await screen.findByRole('button', { name: 'Download notes.txt' }))

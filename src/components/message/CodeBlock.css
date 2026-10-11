@@ -1,9 +1,10 @@
 .code-block {
   margin: 14px 0;
   border: 1px solid var(--color-code-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background-color: var(--color-code-bg);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 
 .code-block__bar {
@@ -11,9 +12,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 8px 6px 14px;
+  padding: 8px 10px 8px 14px;
   border-bottom: 1px solid var(--color-code-border);
   background-color: var(--color-surface);
+}
+
+.code-block__pre code {
+  font-family: inherit;
 }
 
 .code-block__language {
