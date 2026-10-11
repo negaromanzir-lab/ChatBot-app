@@ -19,6 +19,22 @@ import {
   uploadConversationFile,
 } from '../services/conversationService.js';
 
+const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_FILES_PER_MESSAGE = 10;
+const MAX_IMAGE_BYTES_PER_MESSAGE = 20 * 1024 * 1024;
+const SUPPORTED_FILE_TYPES = new Map([
+  ['.csv', ['text/csv', 'application/csv']],
+  ['.docx', ['application/vnd.openxmlformats-officedocument.wordprocessingml.document']],
+  ['.gif', ['image/gif']],
+  ['.jpeg', ['image/jpeg']],
+  ['.jpg', ['image/jpeg']],
+  ['.md', ['text/markdown', 'text/plain', 'text/x-markdown']],
+  ['.pdf', ['application/pdf']],
+  ['.png', ['image/png']],
+  ['.txt', ['text/plain']],
+  ['.webp', ['image/webp']],
+]);
+
 /**
  * Page-level composition: owns no rendering logic of its own, only the wiring.
  *
@@ -83,6 +99,7 @@ export function ChatPage({ user }) {
     renameConversation,
     removeAllConversations,
     setActiveMessages,
+    updateConversationInfo,
     createConversation,
     isLoading: conversationsLoading,
     error: conversationError,
@@ -90,20 +107,24 @@ export function ChatPage({ user }) {
 
   const [uploads, setUploads] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [uploadError, setUploadError] = useState(null);
   const activeConversationIdRef = useRef(activeId);
   const uploadsConversationIdRef = useRef(null);
   const uploadRevisionRef = useRef(0);
+  const previewUrlsRef = useRef(new Map());
   const attachmentIds = useMemo(() => uploads.map(({ id }) => id), [uploads]);
   activeConversationIdRef.current = activeId;
 
   const {
     isPending,
+    toolStatus,
     error,
     wasStopped,
     canRegenerate,
     sendMessage,
     regenerate,
+    editAndResend,
     stop,
     clearError,
     dismissStoppedNotice,
@@ -114,6 +135,7 @@ export function ChatPage({ user }) {
     fileIds: attachmentIds,
     setMessages: setActiveMessages,
     createConversation,
+    onConversationUpdated: updateConversationInfo,
   });
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -138,23 +160,58 @@ export function ChatPage({ user }) {
   }, [isSidebarOpen, isDesktop]);
 
   useEffect(() => {
+    function handleShortcut(event) {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === 'k') {
+        event.preventDefault();
+        document.getElementById('conversation-search')?.focus();
+      } else if (key === 'o' && event.shiftKey) {
+        event.preventDefault();
+        newChat();
+        setIsSidebarOpen(false);
+      } else if (key === ',') {
+        event.preventDefault();
+        setIsSettingsOpen(true);
+      }
+    }
+
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [newChat]);
+
+  useEffect(() => {
     if (uploadsConversationIdRef.current === activeId) return undefined;
 
     let active = true;
     const revision = uploadRevisionRef.current;
+    const previewUrls = previewUrlsRef.current;
     uploadsConversationIdRef.current = activeId;
+    for (const url of previewUrls.values()) URL.revokeObjectURL(url);
+    previewUrls.clear();
     setUploads([]);
     setUploadError(null);
     if (!activeId) return () => { active = false; };
 
     listConversationUploads(activeId)
-      .then((items) => {
+      .then(async (items) => {
+        const withPreviews = [];
+        for (const item of items) {
+          if (!item.contentType?.startsWith('image/')) {
+            withPreviews.push(item);
+            continue;
+          }
+          const blob = await downloadConversationFile(activeId, item.id);
+          const previewUrl = URL.createObjectURL(blob);
+          previewUrlsRef.current.set(item.id, previewUrl);
+          withPreviews.push({ ...item, previewUrl });
+        }
         if (
           active
           && uploadsConversationIdRef.current === activeId
           && revision === uploadRevisionRef.current
         ) {
-          setUploads(items);
+          setUploads(withPreviews);
         }
       })
       .catch((caught) => {
@@ -162,11 +219,44 @@ export function ChatPage({ user }) {
           setUploadError(caught.message || 'Could not load conversation files.');
         }
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+      for (const url of previewUrls.values()) URL.revokeObjectURL(url);
+      previewUrls.clear();
+    };
   }, [activeId]);
 
   async function handleUploadFiles(files) {
     setUploadError(null);
+    const invalidFile = files.find((file) => {
+      const extension = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+      return !SUPPORTED_FILE_TYPES.get(extension)?.includes(file.type)
+        || file.size === 0
+        || file.size > MAX_UPLOAD_SIZE_BYTES;
+    });
+    if (invalidFile) {
+      setUploadError(
+        invalidFile.size > MAX_UPLOAD_SIZE_BYTES
+          ? `${invalidFile.name} exceeds the 10 MB per-file limit.`
+          : `The type or contents of ${invalidFile.name} are not supported.`,
+      );
+      return;
+    }
+    if (uploads.length + files.length > MAX_FILES_PER_MESSAGE) {
+      setUploadError(`A conversation can have at most ${MAX_FILES_PER_MESSAGE} attached files.`);
+      return;
+    }
+    const currentImageBytes = uploads
+      .filter((upload) => upload.contentType?.startsWith('image/'))
+      .reduce((total, upload) => total + upload.size, 0);
+    const selectedImageBytes = files
+      .filter((file) => file.type.startsWith('image/'))
+      .reduce((total, file) => total + file.size, 0);
+    if (currentImageBytes + selectedImageBytes > MAX_IMAGE_BYTES_PER_MESSAGE) {
+      setUploadError('Attached images cannot exceed 20 MB combined.');
+      return;
+    }
+
     setIsUploading(true);
     let conversationId = activeId;
     try {
@@ -177,16 +267,27 @@ export function ChatPage({ user }) {
         uploadsConversationIdRef.current = conversationId;
       }
       for (const file of files) {
-        const upload = await uploadConversationFile(conversationId, file);
+        setUploadProgress({ name: file.name, percent: 0 });
+        const upload = await uploadConversationFile(conversationId, file, {
+          onProgress: (percent) => setUploadProgress({ name: file.name, percent }),
+        });
         if (activeConversationIdRef.current === conversationId) {
           uploadRevisionRef.current += 1;
-          setUploads((current) => [...current, upload]);
+          const previewUrl = file.type.startsWith('image/')
+            ? URL.createObjectURL(file)
+            : undefined;
+          if (previewUrl) previewUrlsRef.current.set(upload.id, previewUrl);
+          setUploads((current) => [
+            ...current,
+            { ...upload, ...(previewUrl ? { previewUrl } : {}) },
+          ]);
         }
       }
     } catch (caught) {
       setUploadError(caught.message || 'Could not upload the selected file.');
     } finally {
       setIsUploading(false);
+      setUploadProgress(null);
     }
   }
 
@@ -210,6 +311,9 @@ export function ChatPage({ user }) {
     setUploadError(null);
     try {
       await deleteConversationFile(activeId, upload.id);
+      const previewUrl = previewUrlsRef.current.get(upload.id);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrlsRef.current.delete(upload.id);
       if (activeConversationIdRef.current === activeId) {
         setUploads((current) => current.filter((item) => item.id !== upload.id));
       }
@@ -276,11 +380,20 @@ export function ChatPage({ user }) {
           theme={theme}
           onToggleTheme={handleThemeToggle}
           onOpenSidebar={() => setIsSidebarOpen(true)}
+          models={modelCatalog.models}
+          selectedModelId={selectedModelId}
+          onModelChange={(modelId) => updatePreference({ selectedModelId: modelId })}
         />
       }
     >
       {hasMessages ? (
-        <MessageList messages={messages} isPending={isPending} onRegenerate={regenerate} />
+        <MessageList
+          messages={messages}
+          isPending={isPending}
+          toolStatus={toolStatus}
+          onRegenerate={regenerate}
+          onEditMessage={editAndResend}
+        />
       ) : (
         <WelcomeScreen onSuggest={sendMessage} />
       )}
@@ -302,12 +415,14 @@ export function ChatPage({ user }) {
         onDismissStopped={dismissStoppedNotice}
         uploads={uploads}
         isUploading={isUploading}
+        uploadProgress={uploadProgress}
         onUploadFiles={handleUploadFiles}
         onDownloadUpload={handleDownloadUpload}
         onDeleteUpload={handleDeleteUpload}
         uploadError={uploadError}
         onDismissUploadError={() => setUploadError(null)}
         supportsVision={selectedModel?.supportsVision}
+        imageMimeTypes={selectedModel?.imageMimeTypes}
       />
 
       <SettingsPanel

@@ -2,6 +2,7 @@ import { Button, IconButton } from '../ui/Button.jsx';
 import { Icon } from '../ui/Icon.jsx';
 import { formatRelativeDay, formatRelativeTime } from '../../utils/date.js';
 import { UserButton } from '@clerk/react';
+import { useMemo, useState } from 'react';
 import './Sidebar.css';
 
 /**
@@ -47,7 +48,13 @@ export function Sidebar({
   onClose,
   onOpenSettings,
 }) {
-  const groups = groupConversations(conversations);
+  const [query, setQuery] = useState('');
+  const filteredConversations = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    if (!normalizedQuery) return conversations;
+    return conversations.filter(({ title }) => title.toLocaleLowerCase().includes(normalizedQuery));
+  }, [conversations, query]);
+  const groups = groupConversations(filteredConversations);
 
   return (
     <aside className="sidebar" aria-label="Sidebar">
@@ -68,12 +75,29 @@ export function Sidebar({
         <Button variant="secondary" isFullWidth onClick={onNewChat}>
           <Icon name="plus" size={16} />
           New chat
+          <kbd className="sidebar__shortcut" aria-hidden="true">Ctrl ⇧ O</kbd>
         </Button>
       </div>
 
+      <label className="sidebar__search">
+        <Icon name="search" size={16} />
+        <span className="visually-hidden">Search conversations</span>
+        <input
+          id="conversation-search"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search conversations"
+          autoComplete="off"
+        />
+        {!query && <kbd aria-hidden="true">Ctrl K</kbd>}
+      </label>
+
       <nav className="sidebar__history" aria-label="Conversation history">
         {groups.length === 0 ? (
-          <p className="sidebar__empty">No conversations yet.</p>
+          <p className="sidebar__empty">
+            {query ? 'No conversations match your search.' : 'No conversations yet.'}
+          </p>
         ) : (
           groups.map((group) => (
             <div className="sidebar__group" key={group.label}>
@@ -133,7 +157,12 @@ export function Sidebar({
           <UserButton />
           <span className="sidebar__profile-name">{displayName}</span>
         </div>
-        <IconButton icon="settings" label="Settings" onClick={onOpenSettings} />
+        <IconButton
+          icon="settings"
+          label="Settings"
+          title="Settings (Ctrl ,)"
+          onClick={onOpenSettings}
+        />
       </div>
     </aside>
   );

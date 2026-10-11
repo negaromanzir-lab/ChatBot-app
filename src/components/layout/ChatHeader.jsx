@@ -9,7 +9,15 @@ import './ChatHeader.css';
  * toggle is a one-click light/dark flip; the three-way preference including
  * "system" lives in Settings.
  */
-export function ChatHeader({ title, onOpenSidebar, theme = 'light', onToggleTheme }) {
+export function ChatHeader({
+  title,
+  onOpenSidebar,
+  theme = 'light',
+  onToggleTheme,
+  models = [],
+  selectedModelId,
+  onModelChange,
+}) {
   return (
     <header className="chat-header">
       <IconButton
@@ -19,7 +27,23 @@ export function ChatHeader({ title, onOpenSidebar, theme = 'light', onToggleThem
         onClick={onOpenSidebar}
       />
 
-      <h1 className="chat-header__title">{title}</h1>
+      <div className="chat-header__identity">
+        <h1 className="chat-header__title">{title}</h1>
+        {models.length > 0 && (
+          <label className="chat-header__model">
+            <span className="visually-hidden">AI model</span>
+            <select
+              aria-label="AI model"
+              value={selectedModelId ?? ''}
+              onChange={(event) => onModelChange?.(event.target.value)}
+            >
+              {models.map((model) => (
+                <option key={model.id} value={model.id}>{model.label}</option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
 
       <IconButton
         icon={theme === 'dark' ? 'sun' : 'moon'}

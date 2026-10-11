@@ -177,6 +177,15 @@ export function useConversations(user) {
     });
   }, []);
 
+  const updateConversationInfo = useCallback((id, updatedConversation) => {
+    setState((current) => ({
+      ...current,
+      conversations: current.conversations.map((conversation) =>
+        conversation.id === id ? { ...conversation, ...updatedConversation } : conversation,
+      ),
+    }));
+  }, []);
+
   return {
     conversations: state.conversations,
     activeId: state.activeId,
@@ -192,6 +201,7 @@ export function useConversations(user) {
     renameConversation,
     removeAllConversations,
     setActiveMessages,
+    updateConversationInfo,
   };
 }
 

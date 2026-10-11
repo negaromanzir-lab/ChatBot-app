@@ -81,6 +81,11 @@ export function createChatController({ chatService } = {}) {
       for await (const chunk of service.streamAssistantReply(messages, {
         signal: controller.signal,
         ...options,
+        onToolStatus: async (toolName) => {
+          if (!writeEvent(res, { type: 'tool', name: toolName })) {
+            await waitForDrain(res, controller.signal);
+          }
+        },
       })) {
         if (controller.signal.aborted) break;
         content += chunk;

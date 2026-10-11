@@ -33,16 +33,28 @@ export function Composer({
   onDismissStopped,
   uploads = [],
   isUploading = false,
+  uploadProgress = null,
   onUploadFiles,
   onDownloadUpload,
   onDeleteUpload,
   uploadError = null,
   onDismissUploadError,
   supportsVision,
+  imageMimeTypes = [],
 }) {
   const [draft, setDraft] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [voiceError, setVoiceError] = useState(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const SpeechRecognition = typeof window !== 'undefined'
+    ? window.SpeechRecognition ?? window.webkitSpeechRecognition
+    : null;
+
+  useEffect(() => () => {
+    recognitionRef.current?.stop();
+  }, []);
 
   const isDraftEmpty = draft.trim().length === 0;
 
@@ -85,6 +97,55 @@ export function Composer({
     submit();
   }
 
+  function toggleVoiceInput() {
+    if (!SpeechRecognition) return;
+    if (isListening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    setVoiceError(null);
+    const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
+    recognition.lang = navigator.language || 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .filter((result) => result.isFinal)
+        .map((result) => result[0]?.transcript ?? '')
+        .join(' ')
+        .trim();
+      if (transcript) {
+        setDraft((current) => [current.trim(), transcript].filter(Boolean).join(' '));
+      }
+    };
+    recognition.onerror = (event) => {
+      setVoiceError(event.error === 'not-allowed'
+        ? 'Microphone access was denied. You can still type your message.'
+        : 'Voice input failed. You can still type your message.');
+    };
+    recognition.onend = () => setIsListening(false);
+    try {
+      recognition.start();
+      setIsListening(true);
+    } catch {
+      setIsListening(false);
+      setVoiceError('Voice input could not start. You can still type your message.');
+    }
+  }
+
+  const imageExtensions = imageMimeTypes.flatMap((type) => ({
+    'image/jpeg': ['.jpg', '.jpeg'],
+    'image/png': ['.png'],
+    'image/webp': ['.webp'],
+    'image/gif': ['.gif'],
+  }[type] ?? []));
+  const acceptedTypes = [
+    '.pdf', '.docx', '.txt', '.md', '.csv',
+    ...imageExtensions,
+  ].join(',');
+
   return (
     <div className="composer">
       {error && (
@@ -110,6 +171,19 @@ export function Composer({
           />
         </div>
       )}
+
+      {voiceError && (
+        <div className="composer__notice composer__notice--error" role="alert">
+          <span className="composer__notice-text">{voiceError}</span>
+          <IconButton
+            icon="close"
+            label="Dismiss voice input message"
+            size="sm"
+            onClick={() => setVoiceError(null)}
+          />
+        </div>
+      )}
+      {isListening && <p className="composer__voice-status" role="status">Listening… Your transcript will appear here for editing.</p>}
 
       {wasStopped && !isPending && (
         <div className="composer__notice" role="status">
@@ -139,7 +213,15 @@ export function Composer({
                 aria-label={`Download ${upload.name}`}
                 title={`Download ${upload.name}`}
               >
-                <Icon name="attach" size={14} />
+                {upload.contentType?.startsWith('image/') && upload.previewUrl ? (
+                  <img
+                    className="composer__image-preview"
+                    src={upload.previewUrl}
+                    alt={`Preview of ${upload.name}`}
+                  />
+                ) : (
+                  <Icon name="attach" size={14} />
+                )}
                 <span>{upload.name}</span>
               </button>
               {upload.indexStatus === 'pending' && (
@@ -176,7 +258,7 @@ export function Composer({
           id="chat-file-upload"
           className="visually-hidden"
           type="file"
-          accept=".pdf,.docx,.txt,.md,.csv,.png,.jpg,.jpeg,.webp"
+          accept={acceptedTypes}
           multiple
           onChange={(event) => {
             const selectedFiles = Array.from(event.target.files ?? []);
@@ -196,6 +278,16 @@ export function Composer({
           onClick={() => fileInputRef.current?.click()}
         >
           <Icon name="attach" size={18} />
+        </button>
+        <button
+          type="button"
+          className={`composer__attach${isListening ? ' composer__attach--active' : ''}`}
+          aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
+          title={SpeechRecognition ? 'Dictate a message' : 'Voice input is unavailable in this browser'}
+          disabled={isPending || !SpeechRecognition}
+          onClick={toggleVoiceInput}
+        >
+          <Icon name="microphone" size={18} />
         </button>
         <label className="visually-hidden" htmlFor="chat-composer">
           Message
@@ -237,8 +329,20 @@ export function Composer({
       </form>
 
       <p className="composer__hint">
-        {isUploading ? 'Uploading files…' : 'Attach PDF, DOCX, text, Markdown, CSV, PNG, JPEG, or WebP · Enter to send'}
+        {isUploading
+          ? `Uploading ${uploadProgress?.name ?? 'file'}… ${uploadProgress?.percent ?? 0}%`
+          : !SpeechRecognition
+            ? 'Voice input unavailable in this browser · Type or attach a file'
+            : 'Attach files or dictate a message · Review and edit the transcript before sending · Enter to send'}
       </p>
+      {isUploading && (
+        <progress
+          className="composer__upload-progress"
+          aria-label={`Uploading ${uploadProgress?.name ?? 'file'}`}
+          max="100"
+          value={uploadProgress?.percent ?? 0}
+        />
+      )}
     </div>
   );
 }

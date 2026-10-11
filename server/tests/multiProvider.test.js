@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createClaudeProvider } from '../src/services/ai/providers/claude.provider.js';
 import { createGeminiProvider } from '../src/services/ai/providers/gemini.provider.js';
 import { createChatService } from '../src/services/ai/chat.service.js';
+import { createToolRegistry } from '../src/services/ai/toolRegistry.js';
 import ApiError from '../src/utils/ApiError.js';
 
 const messages = [{ role: 'user', content: 'Hello' }];
@@ -161,6 +162,7 @@ describe('model-aware chat orchestration', () => {
         return model;
       }),
       providerFactory,
+      toolRegistry: createToolRegistry(),
     });
 
     await service.generateAssistantReply(messages, { model: 'gemini-default' });
@@ -305,6 +307,7 @@ describe('model-aware chat orchestration', () => {
     const service = createChatService({
       providerFactory: () => provider,
       modelResolver: () => ({ id: 'openai-default', supportsVision: true }),
+      toolRegistry: createToolRegistry(),
       uploadService,
       ragService,
     });
@@ -410,6 +413,7 @@ describe('model-aware chat orchestration', () => {
       providerFactory: () => provider,
       modelResolver: () => ({ id: 'gemini-default', supportsVision: true }),
       uploadService,
+      toolRegistry: createToolRegistry(),
     });
 
     await service.generateAssistantReply(messages, {
@@ -431,6 +435,7 @@ describe('model-aware chat orchestration', () => {
       providerFactory: () => provider,
       modelResolver: () => ({ id: 'text-only', supportsVision: false }),
       uploadService,
+      toolRegistry: createToolRegistry(),
     });
     await expect(unsupported.generateAssistantReply(messages, {
       userId: 'user-id',

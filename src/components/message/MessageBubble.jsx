@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Avatar } from './Avatar.jsx';
 import { MarkdownContent } from './MarkdownContent.jsx';
 import { MessageActions } from './MessageActions.jsx';
@@ -17,7 +18,17 @@ import './MessageBubble.css';
  * side is treated as Markdown, so a message containing `<b>` or `#` from the
  * user is shown as the literal characters they typed.
  */
-export function MessageBubble({ message, onRegenerate, canRegenerate = false, showActions = true }) {
+export function MessageBubble({
+  message,
+  onRegenerate,
+  canRegenerate = false,
+  showActions = true,
+  speech,
+  onEditMessage,
+  canEdit = false,
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState(message.message);
   const { sender, message: content, createdAt } = message;
   const isUser = sender === 'user';
   const hasWebSources = !isUser && content.includes('**Web search sources**');
@@ -46,7 +57,31 @@ export function MessageBubble({ message, onRegenerate, canRegenerate = false, sh
           </p>
         )}
         <div className="message-bubble__body">
-          {isUser ? (
+          {isUser && isEditing ? (
+            <form
+              className="message-bubble__edit"
+              onSubmit={(event) => {
+                event.preventDefault();
+                onEditMessage?.(message.id, editDraft);
+                setIsEditing(false);
+              }}
+            >
+              <label className="visually-hidden" htmlFor={`edit-${message.id}`}>Edit your message</label>
+              <textarea
+                id={`edit-${message.id}`}
+                value={editDraft}
+                autoFocus
+                onChange={(event) => setEditDraft(event.target.value)}
+              />
+              <div className="message-bubble__edit-actions">
+                <button type="button" onClick={() => {
+                  setEditDraft(content);
+                  setIsEditing(false);
+                }}>Cancel</button>
+                <button type="submit" disabled={!editDraft.trim()}>Save and resend</button>
+              </div>
+            </form>
+          ) : isUser ? (
             <p className="message-bubble__text">{content}</p>
           ) : (
             <MarkdownContent content={content} />
@@ -68,6 +103,14 @@ export function MessageBubble({ message, onRegenerate, canRegenerate = false, sh
             content={content}
             onRegenerate={onRegenerate}
             canRegenerate={canRegenerate}
+            speech={speech}
+            messageId={message.id}
+            isUser={isUser}
+            canEdit={canEdit}
+            onEdit={() => {
+              setEditDraft(content);
+              setIsEditing(true);
+            }}
           />
         )}
       </div>

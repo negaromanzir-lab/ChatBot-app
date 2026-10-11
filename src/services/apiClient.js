@@ -136,6 +136,73 @@ export async function apiRequest(path, options = {}) {
   return payload;
 }
 
+export async function apiUpload(path, body, { onProgress, signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  const headers = await getRequestHeaders(body);
+  if (signal?.aborted) {
+    throw new ApiClientError('Request cancelled.', { code: 'CANCELLED' });
+  }
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE_URL}${path}`);
+    xhr.withCredentials = true;
+    xhr.timeout = timeoutMs;
+    for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value);
+
+    const cleanup = () => signal?.removeEventListener('abort', abortRequest);
+    const abortRequest = () => xhr.abort();
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) {
+        onProgress?.(Math.round((event.loaded / event.total) * 100));
+      }
+    });
+    xhr.addEventListener('load', () => {
+      cleanup();
+      let payload;
+      try {
+        payload = JSON.parse(xhr.responseText);
+      } catch {
+        reject(new ApiClientError(
+          `The server returned an unexpected response (HTTP ${xhr.status}).`,
+          { status: xhr.status, code: 'INVALID_RESPONSE' },
+        ));
+        return;
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new ApiClientError(
+          payload?.error?.message ?? `Request failed (HTTP ${xhr.status}).`,
+          {
+            status: xhr.status,
+            code: payload?.error?.code ?? 'UNKNOWN',
+            details: payload?.error?.details,
+          },
+        ));
+        return;
+      }
+      resolve(payload);
+    });
+    xhr.addEventListener('error', () => {
+      cleanup();
+      reject(new ApiClientError(
+        'Could not reach the server. Check that the backend is running.',
+        { code: 'NETWORK_ERROR' },
+      ));
+    });
+    xhr.addEventListener('timeout', () => {
+      cleanup();
+      reject(new ApiClientError('The server took too long to respond. Please try again.', {
+        code: 'TIMEOUT',
+      }));
+    });
+    xhr.addEventListener('abort', () => {
+      cleanup();
+      reject(new ApiClientError('Request cancelled.', { code: 'CANCELLED' }));
+    });
+    signal?.addEventListener('abort', abortRequest, { once: true });
+    xhr.send(body);
+  });
+}
+
 /**
  * Starts an HTTP streaming request and returns its Response for the calling
  * service to consume. Stream framing is deliberately left to the feature layer.

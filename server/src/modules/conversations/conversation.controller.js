@@ -50,7 +50,18 @@ export function createConversationController({ conversationService } = {}) {
     res.status(201).json(result);
   }
 
-  return { create, list, get, rename, remove, addMessage };
+  async function updateMessage(req, res) {
+    const result = await getService().updateUserMessage(
+      req.user.id,
+      req.params.id,
+      req.params.messageId,
+      req.body,
+    );
+    if (!result) throw notFound();
+    res.status(200).json(result);
+  }
+
+  return { create, list, get, rename, remove, addMessage, updateMessage };
 }
 
 function notFound() {

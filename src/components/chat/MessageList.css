@@ -14,10 +14,10 @@
 .message-list__inner {
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 32px;
   max-width: var(--content-max-width);
   margin: 0 auto;
-  padding: 28px 24px 12px;
+  padding: 34px 28px 18px;
 }
 
 /* Room for the composer to sit close to the last message. */
@@ -47,7 +47,18 @@
   transition: color var(--transition-fast), background-color var(--transition-fast);
 }
 
+.message-list__scroll:focus-visible {
+  outline-offset: -3px;
+}
+
 .message-list__jump:hover {
   background-color: var(--color-surface-hover);
   color: var(--color-text);
+}
+
+@media (max-width: 768px) {
+  .message-list__inner {
+    padding: 20px 16px 12px;
+    gap: 24px;
+  }
 }

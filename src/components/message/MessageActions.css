@@ -3,7 +3,7 @@
   align-items: center;
   gap: 2px;
   margin-top: 4px;
-  opacity: 0;
+  opacity: 0.55;
   transition: opacity var(--transition-fast);
 }
 
@@ -21,9 +21,31 @@
   .message-actions {
     opacity: 1;
   }
+
+  .message-actions button {
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
 }
 
 .message-actions__hint {
   color: var(--color-text-muted);
   font-size: 12px;
+}
+
+.message-actions__speech {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.message-actions__speech:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
 }

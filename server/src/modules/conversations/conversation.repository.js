@@ -160,6 +160,76 @@ export function createConversationRepository({ databasePool } = {}) {
         client.release();
       }
     },
+
+    async updateUserMessage(userId, conversationId, messageId, { content, title }) {
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+        const conversationResult = await client.query(
+          `SELECT id, user_id, title FROM conversations
+           WHERE id = $1 AND user_id = $2
+           FOR UPDATE`,
+          [conversationId, userId],
+        );
+        if (!conversationResult.rows[0]) {
+          await client.query('ROLLBACK');
+          return null;
+        }
+
+        const messageResult = await client.query(
+          `SELECT id, role, created_at FROM messages
+           WHERE id = $1 AND conversation_id = $2
+           FOR UPDATE`,
+          [messageId, conversationId],
+        );
+        const message = messageResult.rows[0];
+        if (!message || message.role !== 'user') {
+          await client.query('ROLLBACK');
+          return null;
+        }
+
+        await client.query(
+          `DELETE FROM messages
+           WHERE conversation_id = $1
+             AND (created_at, id) > (
+               SELECT created_at, id FROM messages
+               WHERE id = $2 AND conversation_id = $1
+             )`,
+          [conversationId, messageId],
+        );
+        const updatedMessageResult = await client.query(
+          `UPDATE messages SET content = $3
+           WHERE id = $1 AND conversation_id = $2
+           RETURNING id, conversation_id, role, content, created_at`,
+          [messageId, conversationId, content],
+        );
+        const updatedConversationResult = await client.query(
+          `UPDATE conversations
+           SET title = CASE
+                 WHEN $2 = (
+                   SELECT id FROM messages
+                   WHERE conversation_id = $1 AND role = 'user'
+                   ORDER BY created_at ASC, id ASC LIMIT 1
+                 ) THEN $3
+                 ELSE title
+               END,
+               updated_at = NOW()
+           WHERE id = $1 AND user_id = $4
+           RETURNING id, user_id, title, created_at, updated_at`,
+          [conversationId, messageId, title, userId],
+        );
+        await client.query('COMMIT');
+        return {
+          conversation: mapConversation(updatedConversationResult.rows[0]),
+          message: mapMessage(updatedMessageResult.rows[0]),
+        };
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
   };
 }
 

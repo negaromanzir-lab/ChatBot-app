@@ -13,8 +13,10 @@ export function createToolRegistry({ tools = [], log = logger } = {}) {
       || !tool.description
       || typeof tool.inputSchema?.safeParse !== 'function'
       || !tool.inputSchemaJson
+      || typeof tool.inputSchemaJson !== 'object'
       || typeof tool.handler !== 'function'
       || !Array.isArray(tool.permissions)
+      || !tool.permissions.every((permission) => typeof permission === 'string' && permission.length > 0)
     ) {
       throw new TypeError('Tool definitions require a name, description, input schema, permissions, and handler.');
     }

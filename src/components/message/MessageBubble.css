@@ -52,9 +52,64 @@
 }
 
 .message-bubble__source-label {
+  display: inline-flex;
   align-self: flex-start;
-  margin: 0 4px 6px;
-  color: var(--color-text-muted);
+  margin: 0 4px 8px;
+  padding: 3px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
   font-size: 11px;
   font-weight: 600;
+}
+
+.message-bubble__edit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: min(100%, 440px);
+}
+
+.message-bubble__edit textarea {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-elevated);
+}
+
+.message-bubble__edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.message-bubble__edit-actions button {
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-elevated);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.message-bubble__edit-actions button[type='submit'] {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-text-inverted);
+}
+
+.message-bubble__edit-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (max-width: 560px) {
+  .message-bubble--user .message-bubble__content {
+    max-width: 90%;
+  }
 }

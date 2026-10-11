@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { streamAssistantReply, createUserMessage } from '../services/chatService.js';
-import { createConversationMessage } from '../services/conversationService.js';
+import {
+  createConversationMessage,
+  updateConversationMessage,
+} from '../services/conversationService.js';
 
 /**
  * Owns the network lifecycle of a conversation: sending, regenerating, and
@@ -37,8 +40,11 @@ export function useChatRequest({
   createConversation,
   service = streamAssistantReply,
   persistMessage = createConversationMessage,
+  persistEditedMessage = updateConversationMessage,
+  onConversationUpdated = () => {},
 } = {}) {
   const [isPending, setIsPending] = useState(false);
+  const [toolStatus, setToolStatus] = useState(null);
   const [error, setError] = useState(null);
   const [wasStopped, setWasStopped] = useState(false);
 
@@ -60,6 +66,7 @@ export function useChatRequest({
       setIsPending(true);
       setError(null);
       setWasStopped(false);
+      setToolStatus(null);
       streamedReplyIdRef.current = null;
 
       const controller = new AbortController();
@@ -72,7 +79,9 @@ export function useChatRequest({
           model,
           fileIds,
           signal: controller.signal,
+          onToolStatus: setToolStatus,
           onDelta: (_delta, partialReply) => {
+            setToolStatus(null);
             streamedReplyIdRef.current = partialReply.id;
             setMessages((current) => {
               const existingIndex = current.findIndex(
@@ -121,6 +130,7 @@ export function useChatRequest({
         inFlightRef.current = false;
         abortControllerRef.current = null;
         streamedReplyIdRef.current = null;
+        setToolStatus(null);
         setIsPending(false);
       }
     },
@@ -178,6 +188,40 @@ export function useChatRequest({
     await runRequest(conversation, conversationId);
   }, [messages, conversationId, setMessages, runRequest]);
 
+  const editAndResend = useCallback(async (messageId, text) => {
+    const content = typeof text === 'string' ? text.trim() : '';
+    if (!content || !conversationId || inFlightRef.current) return;
+    const messageIndex = messages.findIndex(
+      (message) => message.id === messageId && message.sender === 'user',
+    );
+    if (messageIndex === -1) return;
+
+    inFlightRef.current = true;
+    setError(null);
+    try {
+      const persisted = await persistEditedMessage(conversationId, messageId, content);
+      const conversation = [
+        ...messages.slice(0, messageIndex),
+        persisted.message,
+      ];
+      setMessages(conversation, conversationId);
+      onConversationUpdated(conversationId, persisted.conversation);
+      await runRequest(conversation, conversationId);
+    } catch (caught) {
+      inFlightRef.current = false;
+      setError(caught instanceof Error
+        ? caught.message
+        : 'Could not update the message. Please try again.');
+    }
+  }, [
+    conversationId,
+    messages,
+    onConversationUpdated,
+    persistEditedMessage,
+    runRequest,
+    setMessages,
+  ]);
+
   /** Aborts the in-flight request. Safe to call when nothing is in flight. */
   const stop = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -189,11 +233,13 @@ export function useChatRequest({
 
   return {
     isPending,
+    toolStatus,
     error,
     wasStopped,
     canRegenerate: !isPending && findLastUserMessageIndex(messages) !== -1,
     sendMessage,
     regenerate,
+    editAndResend,
     stop,
     clearError,
     dismissStoppedNotice,

@@ -306,9 +306,10 @@ describe('POST /api/chat', () => {
           label: 'Local offline',
           provider: 'local',
           supportsVision: false,
+          imageMimeTypes: [],
         });
         expect(catalog.models.every((model) =>
-          Object.keys(model).sort().join(',') === 'id,label,provider,supportsVision')).toBe(true);
+          Object.keys(model).sort().join(',') === 'id,imageMimeTypes,label,provider,supportsVision')).toBe(true);
         expect(JSON.stringify(catalog)).not.toMatch(/apiKey|secret|gpt-4o-mini|gemini-2\.5-flash/);
       });
     });

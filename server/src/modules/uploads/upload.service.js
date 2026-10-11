@@ -20,6 +20,7 @@ const MAX_IMAGE_BYTES_PER_CHAT = 20 * 1024 * 1024;
 const MIME_BY_EXTENSION = new Map([
   ['.csv', new Set(['text/csv', 'application/csv'])],
   ['.docx', new Set([DOCX_MIME_TYPE])],
+  ['.gif', new Set(['image/gif'])],
   ['.jpeg', new Set(['image/jpeg'])],
   ['.jpg', new Set(['image/jpeg'])],
   ['.md', new Set(['text/markdown', 'text/plain', 'text/x-markdown'])],
@@ -63,7 +64,7 @@ function validateFile(file, maxSizeBytes) {
   if (!allowedMimeTypes?.has(contentType)) {
     throw ApiError.badRequest(
       'UNSUPPORTED_FILE_TYPE',
-      'Upload a PDF, DOCX, text, Markdown, PNG, JPEG, or WebP file.',
+      'Upload a PDF, DOCX, text, Markdown, PNG, JPEG, GIF, or WebP file.',
     );
   }
 
@@ -85,6 +86,12 @@ function validateFile(file, maxSizeBytes) {
     extension === '.webp' &&
     (file.buffer.toString('ascii', 0, 4) !== 'RIFF' ||
       file.buffer.toString('ascii', 8, 12) !== 'WEBP')
+  ) {
+    throw ApiError.badRequest('INVALID_FILE_CONTENT', 'The file content does not match its type.');
+  }
+  if (
+    extension === '.gif'
+    && !['GIF87a', 'GIF89a'].includes(file.buffer.toString('ascii', 0, 6))
   ) {
     throw ApiError.badRequest('INVALID_FILE_CONTENT', 'The file content does not match its type.');
   }
@@ -344,7 +351,9 @@ export function createUploadService({
     userId,
     conversationId,
     uploadIds,
-    { supportsVision = false } = {},
+    { supportsVision = false, imageMimeTypes = supportsVision
+      ? ['image/jpeg', 'image/png', 'image/webp']
+      : [] } = {},
   ) {
     if (!Array.isArray(uploadIds) || uploadIds.length === 0) return [];
     if (uploadIds.length > MAX_ATTACHMENTS_PER_CHAT) {
@@ -362,6 +371,13 @@ export function createUploadService({
       throw ApiError.badRequest(
         'AI_MODEL_DOES_NOT_SUPPORT_IMAGES',
         'Choose a vision-capable model to ask questions about attached images.',
+      );
+    }
+    const unsupportedImage = images.find((image) => !imageMimeTypes.includes(image.contentType));
+    if (unsupportedImage) {
+      throw ApiError.badRequest(
+        'AI_MODEL_UNSUPPORTED_IMAGE_FORMAT',
+        'The selected model does not support one of the attached image formats.',
       );
     }
     const imageBytes = images

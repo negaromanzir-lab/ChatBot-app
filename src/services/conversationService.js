@@ -1,4 +1,4 @@
-import { apiDownload, apiRequest } from './apiClient.js';
+import { apiDownload, apiRequest, apiUpload } from './apiClient.js';
 import {
   clearConversations,
   loadConversations,
@@ -59,11 +59,11 @@ export async function listConversationUploads(id) {
   return payload.uploads;
 }
 
-export async function uploadConversationFile(id, file) {
+export async function uploadConversationFile(id, file, { onProgress } = {}) {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('conversationId', id);
-  const payload = await apiRequest('/files', { method: 'POST', body: formData });
+  const payload = await apiUpload('/files', formData, { onProgress });
   return payload.upload;
 }
 
@@ -96,6 +96,22 @@ export async function appendConversationMessage(id, { sender, message }) {
         content: message,
       },
     },
+  );
+  return {
+    conversation: {
+      id: payload.conversation.id,
+      title: payload.conversation.title,
+      createdAt: new Date(payload.conversation.createdAt).getTime(),
+      updatedAt: new Date(payload.conversation.updatedAt).getTime(),
+    },
+    message: toUiMessage(payload.message),
+  };
+}
+
+export async function updateConversationMessage(conversationId, messageId, content) {
+  const payload = await apiRequest(
+    `/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}`,
+    { method: 'PATCH', body: { content } },
   );
   return {
     conversation: {
