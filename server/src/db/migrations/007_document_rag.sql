@@ -1,4 +1,12 @@
-CREATE EXTENSION IF NOT EXISTS vector;
+-- Document retrieval (RAG) support.
+--
+-- The pgvector extension is optional. Chat, uploads, and text extraction work
+-- without it; only vector *search* needs it. The extension-dependent object
+-- (`embeddings` and its index) is created inside a guarded block so that a
+-- database without pgvector still applies the rest of this migration -- and,
+-- critically, later migrations (008, 009) are not blocked by a missing optional
+-- extension. Document search then reports that vector indexing is unavailable
+-- instead of failing the whole schema upgrade.
 
 CREATE UNIQUE INDEX conversations_user_id_id_unique
   ON conversations (user_id, id);
@@ -43,12 +51,23 @@ CREATE TABLE document_chunks (
   UNIQUE (document_id, chunk_index)
 );
 
-CREATE TABLE embeddings (
-  chunk_id UUID PRIMARY KEY REFERENCES document_chunks(id) ON DELETE CASCADE,
-  model TEXT NOT NULL,
-  embedding vector(1536) NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS vector;
 
-CREATE INDEX embeddings_cosine_hnsw_idx
-  ON embeddings USING hnsw (embedding vector_cosine_ops);
+  CREATE TABLE embeddings (
+    chunk_id UUID PRIMARY KEY REFERENCES document_chunks(id) ON DELETE CASCADE,
+    model TEXT NOT NULL,
+    embedding vector(1536) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX embeddings_cosine_hnsw_idx
+    ON embeddings USING hnsw (embedding vector_cosine_ops);
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE WARNING 'pgvector is unavailable; skipping vector embeddings (%). '
+      'Document text is stored, but document search will not be available.',
+      SQLERRM;
+END;
+$$;
